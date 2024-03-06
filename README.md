@@ -1,0 +1,1 @@
+This telegram bot is capable of showing the user TV series that are pre-loaded into a private telegram channel, has an admin panel, as well as methods for selling advertising and small service statistics
