@@ -12,23 +12,10 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 import os
 from pathlib import Path
 
-
-# Проверка на существование файла .env
-if not os.path.exists(".env"):
-    print("Файл .env не найден.")
-    print("Создайте файл .env и добавьте в него следующие переменные:")
-    print("SECRET_KEY вашего джанго сервера, либо сгенерируйте его занового")
-    print("BOT_TOKEN для телеграм бота")
-    print("HOST=your_remote_server_ip")
-    print("PORT=22")
-    print("USERNAME=your_username")
-    print("PASSWORD=your_password")
-    exit()
-
-
 from dotenv import load_dotenv
 # Загружаем переменные из .env
 load_dotenv()
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -46,7 +33,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 DEBUG = True
 
 ALLOWED_HOSTS = []
-
+#CSRF_TRUSTED_ORIGINS = ["https://..."]
 
 # Application definition
 
