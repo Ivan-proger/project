@@ -14,3 +14,4 @@ pyTelegramBotAPI==4.14.1
 python-dotenv==1.0.1
 python-Levenshtein==0.23.0
 pytz==2024.1
+paramiko

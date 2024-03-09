@@ -12,6 +12,20 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 import os
 from pathlib import Path
 
+
+# Проверка на существование файла .env
+if not os.path.exists(".env"):
+    print("Файл .env не найден.")
+    print("Создайте файл .env и добавьте в него следующие переменные:")
+    print("SECRET_KEY вашего джанго сервера, либо сгенерируйте его занового")
+    print("BOT_TOKEN для телеграм бота")
+    print("HOST=your_remote_server_ip")
+    print("PORT=22")
+    print("USERNAME=your_username")
+    print("PASSWORD=your_password")
+    exit()
+
+
 from dotenv import load_dotenv
 # Загружаем переменные из .env
 load_dotenv()
@@ -44,7 +58,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'bot1',
-    'chartjs',
 ]
 
 MIDDLEWARE = [

@@ -319,7 +319,7 @@ class Command(BaseCommand):
                 text_msg_season = ''
                 for video_count in video_counts: 
                     if await sync_to_async(lambda: Series.objects.get(id=video_count['series_id']).name)() == obj.name:
-                        text_msg_season += f'- сезон {video_count['season']}: серий {video_count['num_videos']}\r\n'
+                        text_msg_season += f"- сезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
 
                 keyboard_start = types.InlineKeyboardMarkup()
                 button = types.InlineKeyboardButton("✨ Смотреть первую серию >", callback_data=f'start_watching-{obj.id}')
