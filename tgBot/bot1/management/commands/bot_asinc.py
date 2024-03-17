@@ -14,6 +14,8 @@ from asgiref.sync import sync_to_async # способ работы в асинх
 from bot1.models import * # импорт всех моделей Django
 
 from fuzzywuzzy import fuzz # модуль для поиска с ошибками
+from pathlib import Path # Требуется для корректной работы с файлами
+from aiofiles import open as aio_open  # Import for async file operations
 from telebot import asyncio_filters
 from telebot.async_telebot import AsyncTeleBot, types, ExceptionHandler
 from telebot.asyncio_storage import StateMemoryStorage # способ храниения состояний пользователей
@@ -199,7 +201,7 @@ class Command(BaseCommand):
             if call.data.split('-')[0] == 'add':
                 if await sync_to_async(lambda: list(Users.objects.filter(external_id=int(call.data.split('-')[1]), is_superuser=True).all()))():
                     await bot.delete_message(call.message.chat.id, call.message.message_id)
-                    await bot.send_message(call.message.chat.id, f'Введите клавиатуру так: \r\n<code>Название_кнопки : url; </code>:', reply_markup=cancel_keyboard, parse_mode='HTML')
+                    await bot.send_message(call.message.chat.id, f'Введите клавиатуру так: \r\n<code>Название_кнопки - url </code>:', reply_markup=cancel_keyboard, parse_mode='HTML')
                     await bot.set_state(call.message.chat.id, MyStates.admin_keybord_add_set, call.message.chat.id)
 
             # Обрабатываем нажатие на кнопку "Назад"
@@ -227,6 +229,11 @@ class Command(BaseCommand):
                         i += 1
                 if i == len(channels) or user.is_superuser == True:
                     user.is_subscription = True
+                    # Обновляем статистику пришедших к каналу юзеров
+                    channels = await sync_to_async(lambda: list(Channel.objects.filter(id_advertising=True)))()
+                    for channel in channels:
+                        channel.subscribers_added += 1
+                        await channel.asave()
                     await bot.delete_message(call.message.chat.id, call.message.id)
                     await bot.send_message(call.message.chat.id, "Все ограничения сняты✅, нажимте на кнопки ниже для пользования нашим сервисом!🤗")
                     await user.asave()
@@ -268,6 +275,24 @@ class Command(BaseCommand):
                 await bot.send_photo(call.message.chat.id, photo=buffer, caption="🔝Статистика уникального использования за 31 день🔝")
                 plt.close()
                 buffer.close()
+            if call.data == 'fail_txt_bd':
+                await bot.delete_message(call.message.chat.id, call.message.id)
+                # Создаем файл с ID пользователей 
+                async def write_file(users, filename):
+                    async with aio_open(filename, 'w') as file:
+                        async for user in users:
+                            await file.write(f'{user.external_id}\n')
+                # Отправляем его
+                async def send_file(bot, chat_id, filename):
+                    with open(filename, 'rb') as file:
+                        await bot.send_document(chat_id, file, caption=f'Список пользователей ({timezone.now().strftime("%Y-%m-%d %H:%M:%S")})')
+
+                users = await sync_to_async(lambda: Users.objects.all())()
+                filename = 'users.txt'
+                await write_file(users, filename)
+                await send_file(bot, call.message.chat.id, filename)
+
+                
 #-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\- конец логигики колбек сообщений
 
 
@@ -291,21 +316,51 @@ class Command(BaseCommand):
                 external_id=message.from_user.id,
                 defaults={'name': message.from_user.username,}
             )
-
-            if created:   
-                await bot.send_message(message.chat.id, "Обязательно ознакомся с нашим функционалом!", reply_markup=main_keyboard)
-                await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
-            else:
-                await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")                
+    
             if " " in message.text:
                 # выдача сериала или серии по запросу в /start 
                 text = message.text.split()[1]
-                if text.isdigit and not len(text.split('_')) == 3:
-                    await search_series(message, await search_obj_series(int(text)))
-                elif len(text.split('_')) == 3:
-                    text_list = text.split('_')
-                    await search_video(message, id_series=int(text_list[0]), season=int(text_list[1]), number=int(text_list[2]))
+                # Рефералка
+                if text.split('_')[0] == 'ref':
+                    if not user.ref_code:
+                        code = text.split('_')[1]
+                        user.ref_code = code
+                        await user.asave()
+                        try:
+                            # Получение записи
+                            code_usage = await sync_to_async(lambda: StatisticRef.objects.get(name_code=code))()
+                        except StatisticRef.DoesNotExist:
+                            # Если записи нет, создаем новую и устанавливаем счетчик на 1
+                            code_usage = StatisticRef(name_code=code, user_sdded=1)
+                            await code_usage.asave()
+                        else:
+                            # Если запись уже существует, увеличиваем счетчик на 1
+                            code_usage.count += 1
+                            await code_usage.asave()
+                            await bot.send_message(message.chat.id, "Обязательно ознакомся с нашим функционалом!", reply_markup=main_keyboard)
+                            await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
+                    else:
+                        await bot.send_message(message.chat.id, f"У вас уже имеется реферальный код - <code>{user.ref_code}</code>", parse_mode='HTML')
+                else:
+                    if text.isdigit and not len(text.split('_')) == 3:
+                        await search_series(message, await search_obj_series(int(text)))
+                    elif len(text.split('_')) == 3:
+                        text_list = text.split('_')
+                        await search_video(message, id_series=int(text_list[0]), season=int(text_list[1]), number=int(text_list[2]))
+            else:
+                if created: 
+                    # Создаем либо возращаем на то сколькоп ришло к боту просто от команды /start
+                    statistic_code, _ = await sync_to_async(lambda: StatisticRef.objects.get_or_create(name_code='local'))()
+                    statistic_code.user_sdded += 1
+                    await statistic_code.asave()  
+                    # Ставь рефералку того что юзер просто использовал бота без рефки
+                    user.ref_code = 'local'
+                    await user.asave()  
 
+                    await bot.send_message(message.chat.id, "Обязательно ознакомся с нашим функционалом!", reply_markup=main_keyboard)
+                    await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
+                else:
+                    await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML") 
 
         # поиск сериала конкретного ---- core состовляющая
         @bot.message_handler(state=MyStates.search_series)
@@ -405,8 +460,9 @@ class Command(BaseCommand):
                 button1 = types.InlineKeyboardButton("✏️Написать рекламаный пост", callback_data=f'add-{message.from_user.id}')
                 button2 = types.InlineKeyboardButton("🔄Обновить проверку на подписку", callback_data=f'reset_is_subscription')
                 button3 = types.InlineKeyboardButton("📊График активности юзеров", callback_data=f'graf')
+                button4 = types.InlineKeyboardButton("🗂Выгрузить базу.txt Telegram ID", callback_data=f'fail_txt_bd')
                 buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
-                keyboard.add(button, button1, button2, button3,buttonx)     
+                keyboard.add(button, button1, button2, button3, button4, buttonx)     
                 await bot.send_message(message.from_user.id, '💌💌💌--Админ панель--💌💌💌', reply_markup=keyboard)
             else:
                 await bot.send_message(message.from_user.id, f'за покупкой рекламы > {settings.CONTACT_TS}', reply_markup=main_keyboard, parse_mode='HTML')
@@ -414,11 +470,11 @@ class Command(BaseCommand):
         @bot.message_handler(state=MyStates.admin_keybord_add_set)
         async def admin_keybord_add(message):
             keyboard = types.InlineKeyboardMarkup(row_width=1)  # создаем объект клавиатур
-            if ':' in message.text:
+            if '-' in message.text:
                 try:
-                    buttons_data = message.text.split('; ')  # разбиваем строку на отдельные кнопки и их данные
+                    buttons_data = message.text.split(' ')  # разбиваем строку на отдельные кнопки и их данные
                     for button in buttons_data:
-                        button_text, button_url = button.split(' : ')  # делим данные кнопки на текст и ссылку
+                        button_text, button_url = button.split(' - ')  # делим данные кнопки на текст и ссылку
                         keyboard.add(types.InlineKeyboardButton(text=button_text, url=button_url.strip()))  # добавляем кнопку в клавиатуру
                         print(button_url.strip())
                     await bot.send_message(message.chat.id, 'Введите текст(вы можете добавить фото или видео) рекламы(Для использования отдельных шрифтов используйте HTML разметку телеграмма): ')

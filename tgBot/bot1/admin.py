@@ -48,4 +48,6 @@ class VideoAdmin(admin.ModelAdmin):
 class ServiceUsageAdmin(admin.ModelAdmin):
     list_display = ('date', 'count')
 
-
+@admin.register(StatisticRef)
+class StatisticRef(admin.ModelAdmin):
+    list_display = ('name_code', 'user_sdded')

@@ -9,6 +9,7 @@ class Users(models.Model):
     is_superuser = models.BooleanField(default=False, verbose_name='Является ли пользователь админом')
     is_subscription = models.BooleanField(default=False, verbose_name='Подписался ли пользователь на каналы-спосноры')
     last_activity = models.DateTimeField(default=timezone.now, verbose_name='Последняя активность')
+    ref_code = models.CharField(max_length=20, verbose_name="Код рефералки", blank=True, null=True, default=None)
 
     @sync_to_async
     def update_last_activity(self):
@@ -59,6 +60,7 @@ class Channel(models.Model):
     is_super_channel = models.BooleanField(default=False, verbose_name='Является ли канал супер важным для постинга сериалов')
     id_advertising = models.BooleanField(default=False, verbose_name='Канал для рекламы')
     name_channel = models.TextField(max_length=64, blank=True, null=True, default="channel")
+    subscribers_added = models.IntegerField(verbose_name="Пришло подписчиков", default=0)
 
     class Meta:
         verbose_name = 'Каналы'
@@ -81,6 +83,11 @@ class ServiceUsage(models.Model):
         verbose_name_plural = 'Статистика активности'
 
 
+class StatisticRef(models.Model):
+    name_code = models.CharField(max_length=20, verbose_name="Код рефералки")
+    user_sdded = models.IntegerField(verbose_name="Пришло юзеров", default=0)
 
-
+    class Meta:
+        verbose_name = 'Статистика рефералок'
+        verbose_name_plural = 'Статистика рефералок'
 
