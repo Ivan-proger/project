@@ -528,6 +528,7 @@ class Command(BaseCommand):
                             count += 1
                         except:
                             print(f'Пользователя - {str(obj.external_id)} не существует в базе')
+                            await sync_to_async(lambda: obj.delete())
                     await bot.send_message(message.chat.id, f'Сообщение отправлено: {count} пользователям')                        
             else:       
                 await bot.delete_message(message.chat.id, message.id)
