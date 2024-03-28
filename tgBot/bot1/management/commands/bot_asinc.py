@@ -560,11 +560,14 @@ class Command(BaseCommand):
             chat_info = await bot.get_chat(message.chat.id)
             await sync_to_async(Channel.objects.get_or_create)(
                 defaults={'name_channel': chat_info.username},
-                id_channel=message.chat.id,
-                ) #добавления канала в базу
+                id_channel=message.chat.id,) #добавления канала в базу
             id = await sync_to_async(lambda: Channel.objects.get(id_channel=message.chat.id))() # получение строки из канала
 
             if id.is_super_channel:
+                if message.content_type == "text" and message.text == "/help":
+                    await bot.delete_message(message.chat.id, message.id)
+                    await bot.send_message(message.chat.id, settings.HELP_CHANNEL, parse_mode='HTML')
+
                 if message.content_type == "video":
                     id_video = message.video.file_id
                     message_text = message.caption    
@@ -590,8 +593,8 @@ class Command(BaseCommand):
                             series = s,
                             video_id = id_video,
                             season = message_text_list[0], # первая строчка номер сезоня
-                            number = number, # вторая сстрочка до " ; " номер серии
-                            name =  message_text_list[1],  # третья  строчка это название серии
+                            number = number, # номер серии
+                            name =  message_text_list[1],  # вторая строчка это название серии
                         ))()
                         await bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code> \r\nCерия №{video.number}, сезон {video.season}\r\n #{s.name}', parse_mode='HTML')
                 if message.content_type == "photo":
