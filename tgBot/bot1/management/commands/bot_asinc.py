@@ -58,22 +58,25 @@ keyboard_next_video_list.row(button)
 
 # обновление последней активности
 async def update_activity(external_id):
-    user = await sync_to_async(lambda: Users.objects.get(external_id=external_id))() 
-    current_date = timezone.now()
-    last_activity = user.last_activity 
-    if last_activity.day != current_date.day: #Собираем статистику уникальных пользователей за день
-        try:
-            # Получение записи по текущей дате
-            service_usage = await sync_to_async(lambda: ServiceUsage.objects.get(date=current_date))()
-        except ServiceUsage.DoesNotExist:
-            # Если записи нет, создаем новую и устанавливаем счетчик на 1
-            service_usage = ServiceUsage(date=current_date, count=1)
-            await service_usage.asave()
-        else:
-            # Если запись уже существует, увеличиваем счетчик на 1
-            service_usage.count += 1
-            await service_usage.asave()        
-    await user.update_last_activity()        
+    try:
+        user = await sync_to_async(lambda: Users.objects.get(external_id=external_id))() 
+        current_date = timezone.now()
+        last_activity = user.last_activity 
+        if last_activity.day != current_date.day: #Собираем статистику уникальных пользователей за день
+            try:
+                # Получение записи по текущей дате
+                service_usage = await sync_to_async(lambda: ServiceUsage.objects.get(date=current_date))()
+            except ServiceUsage.DoesNotExist:
+                # Если записи нет, создаем новую и устанавливаем счетчик на 1
+                service_usage = ServiceUsage(date=current_date, count=1)
+                await service_usage.asave()
+            else:
+                # Если запись уже существует, увеличиваем счетчик на 1
+                service_usage.count += 1
+                await service_usage.asave()        
+        await user.update_last_activity()
+    except:
+        pass        
 
  # проверка на подписку
 async def subscription_check(message):
@@ -187,15 +190,18 @@ class Command(BaseCommand):
                                 inline_keyboard.keyboard[0].pop(0)  # Удаляем первую кнопку
                                 # Редактируем сообщение с обновленной инлайн клавиатурой
                                 await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=inline_keyboard)
-                        video = await sync_to_async(lambda: Video.objects.get(id=call.data.split('-')[1]))()
-                        if await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season, number=video.number+1).all()))():
-                            await search_video(call.message, id_series=video.series_id, season=video.season, number=video.number+1)
-                        elif await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season+1, number=1).all()))():
-                            await search_video(call.message, id_series=video.series_id, season=video.season+1, number=1)
-                        else:
-                            await bot.send_message(call.message.chat.id,'Это было последнее видеo😢', reply_markup=main_keyboard)
+                        try:
+                            video = await sync_to_async(lambda: Video.objects.get(id=call.data.split('-')[1]))()
+                            if await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season, number=video.number+1).all()))():
+                                await search_video(call.message, id_series=video.series_id, season=video.season, number=video.number+1)
+                            elif await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season+1, number=1).all()))():
+                                await search_video(call.message, id_series=video.series_id, season=video.season+1, number=1)
+                            else:
+                                await bot.send_message(call.message.chat.id,'Это было последнее видеo😢', reply_markup=main_keyboard)
+                        except:
+                            await bot.send_message(call.message.chat.id,'Произошла ошибка🤬', reply_markup=main_keyboard)
 
-            # закрытие панельки
+            # Закрытие панельки
             if call.data == 'cancel':
                 await bot.delete_message(call.message.chat.id, call.message.message_id)
             if call.data.split('-')[0] == 'add':
@@ -362,7 +368,7 @@ class Command(BaseCommand):
                 else:
                     await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML") 
 
-        # поиск сериала конкретного ---- core состовляющая
+        # Поиск конкретного сериала  ---- core состовляющая
         @bot.message_handler(state=MyStates.search_series)
         async def search_series(message, obj=None):          
             if not obj:
@@ -393,7 +399,7 @@ class Command(BaseCommand):
             else:
                 await bot.send_message(message.chat.id, settings.ERROR_VIDEO)  
 
-        # поиск видо как после сериала так и как отдельный метод для вызова где угодно
+        # Поиск видо как после сериала так и как отдельный метод для вызова где угодно
         @bot.message_handler(state=MyStates.search_video)
         async def search_video(message, id_series=None, season=None, number=None):
             if not id_series:
@@ -424,9 +430,9 @@ class Command(BaseCommand):
             except:
                 await bot.send_message(message.chat.id, settings.ERROR_VIDEO)
 
-        # альтернативный список по каоманде /list
+        # Альтернативный список по команде /list
         @bot.message_handler(commands=['list'])
-        async def list_mode(message, start_index=0, end_index=25): 
+        async def list_mode(message, start_index=0, end_index=45): 
             async def objects_Series(start_index, end_index):    
                 return await sync_to_async(lambda: list(Series.objects.all()[start_index:end_index]))()
             all_series = await objects_Series(start_index, end_index)
@@ -451,7 +457,7 @@ class Command(BaseCommand):
                 await bot.send_message(message.chat.id, settings.LIST_MESSAGE + final_string, reply_markup=keyboard_next_video_list_end, parse_mode='HTML')
 
 
-        # админ команды
+        # Админ команды
         @bot.message_handler(commands=['admin'])
         async def handle_admin_command(message):
             if await sync_to_async(lambda: list(Users.objects.filter(external_id=message.from_user.id, is_superuser=True).all()))():
@@ -469,13 +475,21 @@ class Command(BaseCommand):
             await bot.delete_message(message.chat.id, message.message_id)
         @bot.message_handler(state=MyStates.admin_keybord_add_set)
         async def admin_keybord_add(message):
-            keyboard = types.InlineKeyboardMarkup(row_width=1)  # создаем объект клавиатур
-            if '-' in message.text:
+            keyboard = types.InlineKeyboardMarkup()  # создаем объект клавиатур
+            if message.text:
                 try:
-                    buttons_data = message.text.split(' ')  # разбиваем строку на отдельные кнопки и их данные
-                    for button in buttons_data:
-                        button_text, button_url = button.split(' - ')  # делим данные кнопки на текст и ссылку
-                        keyboard.add(types.InlineKeyboardButton(text=button_text, url=button_url.strip()))  # добавляем кнопку в клавиатуру
+                    for button_text in message.text.split('\n'):
+                        if ';' in button_text:
+                            current_row = []
+                            button_texts = button_text.split(' ; ')
+                            for button_text in button_texts:
+                                button_name, button_url = button_text.split(' - ')
+                                current_row.append(types.InlineKeyboardButton(text=button_name, url=button_url))
+                            keyboard.row(*current_row)
+                        else:
+                            button_name, button_url = button_text.split(' - ')
+                            keyboard.add(types.InlineKeyboardButton(text=button_name, url=button_url))
+                    
                         print(button_url.strip())
                     await bot.send_message(message.chat.id, 'Введите текст(вы можете добавить фото или видео) рекламы(Для использования отдельных шрифтов используйте HTML разметку телеграмма): ')
                     async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
@@ -506,10 +520,14 @@ class Command(BaseCommand):
                 async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
                     data['admin_quantity_users'] = 0
                 await bot.send_message(message.chat.id, 'Число не действительно, будет отправлнно всем юзерам бота.')
-            await bot.set_state(message.from_user.id, MyStates.admin_confirmation, message.chat.id)
-            async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-                await bot.copy_message(message.chat.id, message.chat.id, data['admin_message_id'], reply_markup=data['admin_keyboard_add']) 
-            await bot.send_message(message.chat.id, 'Верно? \r\nДля отправки введите `<code>Yes</code>`: ', parse_mode="HTML")      
+            try:
+                await bot.set_state(message.from_user.id, MyStates.admin_confirmation, message.chat.id)
+                async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+                    await bot.copy_message(message.chat.id, message.chat.id, data['admin_message_id'], reply_markup=data['admin_keyboard_add']) 
+                await bot.send_message(message.chat.id, 'Верно? \r\nДля отправки введите `<code>Yes</code>`: ', parse_mode="HTML")     
+            except Exception as e:
+                 await bot.send_message(message.chat.id, f'⛔⛔⛔ Ошибка: \r\n<code>{e}</code>', parse_mode="HTML")
+                 await any_state(message)
 
         @bot.message_handler(state=MyStates.admin_confirmation)
         async def admin_confirmation_add(message):
@@ -517,7 +535,7 @@ class Command(BaseCommand):
                 await bot.send_message(message.chat.id, 'запускаю шарманку', reply_markup=main_keyboard)
                 async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
                     if data['admin_quantity_users'] != 0:
-                        records = await sync_to_async(lambda: list(Users.objects.all().order_by('?')[:int(data['admin_quantity_users'])]))() #определенный рэндж рассылки
+                        records = await sync_to_async(lambda: list(Users.objects.all().order_by('?')[:int(data['admin_quantity_users'])]))() # Oпределенный рэндж рассылки
                     else:
                         records = await sync_to_async(lambda: list(Users.objects.all().order_by('?')))()
                     count = 0
@@ -528,14 +546,15 @@ class Command(BaseCommand):
                             count += 1
                         except:
                             print(f'Пользователя - {str(obj.external_id)} не существует в базе')
-                            await sync_to_async(lambda: obj.delete())
+                            await obj.adelete()
                     await bot.send_message(message.chat.id, f'Сообщение отправлено: {count} пользователям')                        
             else:       
                 await bot.delete_message(message.chat.id, message.id)
                 await bot.send_message(message.chat.id, 'Все отменено. ', reply_markup=main_keyboard)
                 await bot.delete_state(message.from_user.id, message.chat.id)               
 
-        # Добавления сериала и видео к нему с помощью приватного канала
+
+        # Добавления сериала и видео к нему с помощью приватного канала ---- ----- ----- ----- -----
         @bot.channel_post_handler(content_types=['video', 'text', 'photo'])
         async def addBDfilm(message):
             chat_info = await bot.get_chat(message.chat.id)
@@ -551,21 +570,30 @@ class Command(BaseCommand):
                     message_text = message.caption    
                     if message_text:                        
                         message_text_list = message_text.split(' ; ')
-                        if str(message_text_list[3]).isdigit():
+                        if str(message_text_list[2]).isdigit():
                             try:
-                                s = await sync_to_async(lambda: Series.objects.get(id=int(message_text_list[3])))()
+                                s = await sync_to_async(lambda: Series.objects.get(id=int(message_text_list[2])))()
                             except:
-                                s, _ = await sync_to_async(lambda: Series.objects.get_or_create(name = message_text_list[3]))()
+                                s, _ = await sync_to_async(lambda: Series.objects.get_or_create(name = message_text_list[2]))()
                         else:                              # последняя строчка это названия cериала(аниме) в которое добавлять видео можно писать просто id группы видосов
-                            s, _ = await sync_to_async(lambda: Series.objects.get_or_create(name = message_text_list[3]))()                 
+                            s, _ = await sync_to_async(lambda: Series.objects.get_or_create(name = message_text_list[2]))()
+                        number = None
+                        video_counts = await sync_to_async(lambda: list(Video.objects.values('series_id', 'season').annotate(num_videos=Count('id'))))()                                    
+                        for video_count in video_counts: 
+                            if await sync_to_async(lambda: Series.objects.get(id=video_count['series_id']).name)() == s.name:
+                                if int(video_count['season']) == int(message_text_list[0]):
+                                    number = int(video_count['num_videos']) + 1
+                        if not number:
+                            number = 1
+              
                         video = await sync_to_async(lambda: Video.objects.create(
                             series = s,
                             video_id = id_video,
                             season = message_text_list[0], # первая строчка номер сезоня
-                            number = message_text_list[1], # вторая сстрочка до " ; " номер серии
-                            name =  message_text_list[2],  # третья  строчка это название серии
+                            number = number, # вторая сстрочка до " ; " номер серии
+                            name =  message_text_list[1],  # третья  строчка это название серии
                         ))()
-                        await bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code>', parse_mode='HTML')
+                        await bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code> \r\nCерия №{video.number}, сезон {video.season}\r\n #{s.name}', parse_mode='HTML')
                 if message.content_type == "photo":
                     id_photo = message.photo[0].file_id
                     message_text_photo = message.caption
@@ -576,26 +604,29 @@ class Command(BaseCommand):
                           'poster':  id_photo,
                           'description': message_text_list[1] # вторая строчка описание этого сериала
                         }))()
-                    await bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}', parse_mode='HTML')
+                    await bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}\r\n#{s.name}', parse_mode='HTML')
     
                     if not cre:
                         s.poster = id_photo
                         s.description = message_text_list[1]
                         s.asave()
-                        await bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}', parse_mode='HTML')
+                        await bot.send_message(message.chat.id, f'Успешно изменён сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description} \r\n#{s.name}', parse_mode='HTML')
 
-        # основное меню настраиваться в конфиге
+        # Основное меню настраиваться в конфиге
         @bot.message_handler(content_types=['text'])
         async def work(message):
-            await update_activity(message.chat.id) # обновление последней активности
-            if await subscription_check(message):    # проверка на подписку на рекламные каналы
-                for key, value in settings.KEYBOARD_CONFIG.items():
-                    if message.text == value['title']:
-                        callback = value['callback']
-                        await globals()[callback](message)
-                        return
+            try:
+                await update_activity(message.chat.id) # Обновление последней активности
+                if await subscription_check(message):    # Проверка на подписку на рекламные каналы
+                    for key, value in settings.KEYBOARD_CONFIG.items():
+                        if message.text == value['title']:
+                            callback = value['callback']
+                            await globals()[callback](message)
+                            return
+            except:
+                await bot.send_message(message.chat.id, f'😨 Произошла ошибка! введите <code>/start</code>', parse_mode='HTML')
 
-        # регестрация фильтров
+        # Регестрация фильтров
         bot.add_custom_filter(asyncio_filters.StateFilter(bot))
         bot.add_custom_filter(asyncio_filters.TextMatchFilter())
 
