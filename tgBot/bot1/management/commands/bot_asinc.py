@@ -1,3 +1,4 @@
+import requests
 import asyncio #база для асинхроной работы бота
 import logging #дебаг режим
 import telebot #база бота нашего
@@ -634,4 +635,38 @@ class Command(BaseCommand):
         bot.add_custom_filter(asyncio_filters.TextMatchFilter())
 
 
-        asyncio.run(bot.polling())#infinity_polling(timeout=50)
+        # Запуск на системе вебхуков
+        if settings.WEBHOOK_WORK:
+            print('''
+- - - - - - - - - - - - - - - - - - - - - - - - - 
+                                    
+Quick'n'dirty SSL certificate generation:
+
+openssl genrsa -out webhook_pkey.pem 2048
+openssl req -new -x509 -days 3650 -key webhook_pkey.pem -out webhook_cert.pem
+                  
+- - - - - - - - - - - - - - - - - - - - - - - - -   
+                  ''')      
+            WEBHOOK_SSL_CERT = './webhook_cert.pem'  # Path to the ssl certificate
+            WEBHOOK_SSL_PRIV = './webhook_pkey.pem'  # Path to the ssl private key
+            if settings.DEBUG:
+                response = requests.get('https://ifconfig.me')
+                if response.status_code == 200:
+                    ip_address = response.text.strip()
+                    print(f"\nPublic IP: {ip_address}")
+                else:
+                    print("\nError fetching IP address\n")
+                DOMAIN = ip_address
+            else:     
+                DOMAIN = settings.ALLOWED_HOSTS[0] # either domain, or ip address of vps
+            # it uses fastapi + uvicorn
+            asyncio.run(bot.run_webhooks(
+                listen=DOMAIN,
+                certificate=WEBHOOK_SSL_CERT,
+                certificate_key=WEBHOOK_SSL_PRIV,
+                debug=settings.DEBUG,            
+                ))
+        elif settings.DEBUG:
+            asyncio.run(bot.polling())
+        else:
+            asyncio.run(bot.infinity_polling(timeout=50))
