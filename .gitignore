@@ -3,3 +3,7 @@
 .vscode
 db.sqlite3
 users.txt
+webhook_cert.pem
+webhook_pkey.pem
+StartMessageID
+ListMessageID

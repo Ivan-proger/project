@@ -1,3 +1,4 @@
+import os
 import requests
 import asyncio #база для асинхроной работы бота
 import logging #дебаг режим
@@ -104,7 +105,13 @@ async def subscription_check(message):
 async def all_items():
     return await sync_to_async(lambda: list(Series.objects.all()))()
 async def send_page(message):
-    msg = await bot.send_message(message.chat.id, settings.LIST_MESSAGE)
+    if os.path.exists('ListMessageID'):
+        with open('ListMessageID', "r") as f:
+            file_id = f.readline().strip()
+            msg = await bot.send_photo(message.chat.id, file_id)
+    else:
+        msg = await bot.send_message(message.chat.id, settings.LIST_MESSAGE, parse_mode="HTML")
+    #msg = await bot.send_message(message.chat.id, settings.LIST_MESSAGE)
     await send_page1(msg)
 # Функция для отправки сообщения с клавиатурой
 async def send_page1(message, current_page=1):
@@ -136,7 +143,7 @@ async def search_mode(message):
     await bot.send_message(message.chat.id, "🔍 Вы выбрали режим поиска.", reply_markup=cancel_keyboard)
     await bot.set_state(message.from_user.id, MyStates.search_series, message.chat.id)
 
-# поиск сериала
+# Поиск сериала
 async def search_obj_series(query):
     # Если запрос - это число, ищем по id
     if str(query).isdigit():
@@ -298,8 +305,15 @@ class Command(BaseCommand):
                 filename = 'users.txt'
                 await write_file(users, filename)
                 await send_file(bot, call.message.chat.id, filename)
+            # Изменение оформления да/нет
+            if call.data == 'CHANGE_DESIGN':
+                await bot.delete_message(call.message.chat.id, call.message.id)
+                if settings.CHANGE_DESIGN:
+                    settings.CHANGE_DESIGN = False
+                else:
+                    settings.CHANGE_DESIGN = True
+                await handle_admin_command(call.message, True)
 
-                
 #-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\- конец логигики колбек сообщений
 
 
@@ -316,7 +330,16 @@ class Command(BaseCommand):
             await bot.send_message(message.chat.id, settings.COMMAND_HELP)
 
         @bot.message_handler(commands=['start'])
-        async def start(message):    
+        async def start(message):
+            # Отправка приветсвия с фотографией либо без если файл отсуствует 
+            async def send_start_message(message):
+                if os.path.exists('StartMessageID'):
+                    with open('StartMessageID', "r") as f:
+                        file_id = f.readline().strip()
+                        await bot.send_photo(message.chat.id, file_id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
+                else:
+                    await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
+
             await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
 
             user, created = await sync_to_async(Users.objects.get_or_create)(
@@ -345,7 +368,7 @@ class Command(BaseCommand):
                             code_usage.count += 1
                             await code_usage.asave()
                             await bot.send_message(message.chat.id, "Обязательно ознакомся с нашим функционалом!", reply_markup=main_keyboard)
-                            await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
+                            await send_start_message(message)
                     else:
                         await bot.send_message(message.chat.id, f"У вас уже имеется реферальный код - <code>{user.ref_code}</code>", parse_mode='HTML')
                 else:
@@ -365,9 +388,9 @@ class Command(BaseCommand):
                     await user.asave()  
 
                     await bot.send_message(message.chat.id, "Обязательно ознакомся с нашим функционалом!", reply_markup=main_keyboard)
-                    await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
+                    await send_start_message(message)
                 else:
-                    await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML") 
+                    await send_start_message(message) 
 
         # Поиск конкретного сериала  ---- core состовляющая
         @bot.message_handler(state=MyStates.search_series)
@@ -460,20 +483,25 @@ class Command(BaseCommand):
 
         # Админ команды
         @bot.message_handler(commands=['admin'])
-        async def handle_admin_command(message):
-            if await sync_to_async(lambda: list(Users.objects.filter(external_id=message.from_user.id, is_superuser=True).all()))():
+        async def handle_admin_command(message, red=False):
+            if await sync_to_async(lambda: list(Users.objects.filter(external_id=message.from_user.id, is_superuser=True).all()))() or red:
                 keyboard = types.InlineKeyboardMarkup(row_width=1)
                 button = types.InlineKeyboardButton("💌Веб панель", url=settings.ADMIN_PANEL_URL)
                 button1 = types.InlineKeyboardButton("✏️Написать рекламаный пост", callback_data=f'add-{message.from_user.id}')
                 button2 = types.InlineKeyboardButton("🔄Обновить проверку на подписку", callback_data=f'reset_is_subscription')
                 button3 = types.InlineKeyboardButton("📊График активности юзеров", callback_data=f'graf')
                 button4 = types.InlineKeyboardButton("🗂Выгрузить базу.txt Telegram ID", callback_data=f'fail_txt_bd')
+                if settings.CHANGE_DESIGN:
+                    button5 = types.InlineKeyboardButton("🎨Выключить режим оформления", callback_data=f'CHANGE_DESIGN')
+                else:
+                    button5 = types.InlineKeyboardButton("🎨Включить режим оформления", callback_data=f'CHANGE_DESIGN')
                 buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
-                keyboard.add(button, button1, button2, button3, button4, buttonx)     
-                await bot.send_message(message.from_user.id, '💌💌💌--Админ панель--💌💌💌', reply_markup=keyboard)
+                keyboard.add(button, button1, button2, button3, button4, button5,buttonx)     
+                await bot.send_message(message.chat.id, '💌💌💌--Админ панель--💌💌💌', reply_markup=keyboard)
             else:
                 await bot.send_message(message.from_user.id, f'за покупкой рекламы > {settings.CONTACT_TS}', reply_markup=main_keyboard, parse_mode='HTML')
-            await bot.delete_message(message.chat.id, message.message_id)
+            if not red:
+                await bot.delete_message(message.chat.id, message.message_id)
         @bot.message_handler(state=MyStates.admin_keybord_add_set)
         async def admin_keybord_add(message):
             keyboard = types.InlineKeyboardMarkup()  # создаем объект клавиатур
@@ -555,7 +583,7 @@ class Command(BaseCommand):
                 await bot.delete_state(message.from_user.id, message.chat.id)               
 
 
-        # Добавления сериала и видео к нему с помощью приватного канала ---- ----- ----- ----- -----
+# Добавления сериала и видео к нему с помощью приватного канала ---- ----- ----- ----- -----
         @bot.channel_post_handler(content_types=['video', 'text', 'photo'])
         async def addBDfilm(message):
             chat_info = await bot.get_chat(message.chat.id)
@@ -599,22 +627,33 @@ class Command(BaseCommand):
                         ))()
                         await bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code> \r\nCерия №{video.number}, сезон {video.season}\r\n #{s.name}', parse_mode='HTML')
                 if message.content_type == "photo":
-                    id_photo = message.photo[0].file_id
-                    message_text_photo = message.caption
-                    message_text_list = message_text_photo.split(' ; ')
-                    s, cre = await sync_to_async(lambda: Series.objects.get_or_create(
-                        name = message_text_list[0],          #первая строчка названия сериала
-                        defaults={
-                          'poster':  id_photo,
-                          'description': message_text_list[1] # вторая строчка описание этого сериала
-                        }))()
-                    await bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}\r\n#{s.name}', parse_mode='HTML')
-    
-                    if not cre:
-                        s.poster = id_photo
-                        s.description = message_text_list[1]
-                        s.asave()
-                        await bot.send_message(message.chat.id, f'Успешно изменён сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description} \r\n#{s.name}', parse_mode='HTML')
+                    if settings.CHANGE_DESIGN and (message.caption == "Start message" or message.caption == "sm"):  # Добавление фото после команды /start
+                            with open("StartMessageID", "w") as f:
+                                f.write(message.photo[0].file_id)
+                            await bot.send_message(message.chat.id, f'Успешно добавлено изображение в начальное сообщение')
+                    elif settings.CHANGE_DESIGN and (message.caption == "List message" or message.caption == "lm"):  # Добавление фото в список
+                            with open("ListMessageID", "w") as f:
+                                f.write(message.photo[0].file_id)
+                            await bot.send_message(message.chat.id, f'Успешно добавлено изображение для списка')
+                    elif len(message.caption.split(' ; ')) == 2:
+                        id_photo = message.photo[0].file_id
+                        message_text_photo = message.caption
+                        message_text_list = message_text_photo.split(' ; ')
+                        s, cre = await sync_to_async(lambda: Series.objects.get_or_create(
+                            name = message_text_list[0],          #первая строчка названия сериала
+                            defaults={
+                            'poster':  id_photo,
+                            'description': message_text_list[1] # вторая строчка описание этого сериала
+                            }))()
+                        await bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}\r\n#{s.name}', parse_mode='HTML')
+        
+                        if not cre:
+                            s.poster = id_photo
+                            s.description = message_text_list[1]
+                            s.asave()
+                            await bot.send_message(message.chat.id, f'Успешно изменён сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description} \r\n#{s.name}', parse_mode='HTML')
+                    else:
+                        await bot.send_message(message.chat.id, f'Фото не было никуда добавлено, перепроверьте введенные данные')
 
         # Основное меню настраиваться в конфиге
         @bot.message_handler(content_types=['text'])
@@ -639,7 +678,9 @@ class Command(BaseCommand):
         if settings.WEBHOOK_WORK:
             print('''
 - - - - - - - - - - - - - - - - - - - - - - - - - 
-                                    
+                  
+Please install uvicorn and fastapi in order to use `run_webhooks` method.
+
 Quick'n'dirty SSL certificate generation:
 
 openssl genrsa -out webhook_pkey.pem 2048
@@ -667,6 +708,8 @@ openssl req -new -x509 -days 3650 -key webhook_pkey.pem -out webhook_cert.pem
                 debug=settings.DEBUG,            
                 ))
         elif settings.DEBUG:
+            asyncio.run(bot.delete_webhook(True))
             asyncio.run(bot.polling())
         else:
+            asyncio.run(bot.delete_webhook(True))
             asyncio.run(bot.infinity_polling(timeout=50))

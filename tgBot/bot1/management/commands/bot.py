@@ -304,45 +304,45 @@ class Command(BaseCommand):
 
 
         #Добавления сериала и видео к нему с помощью приватного канала
-        @bot.channel_post_handler(content_types=['video', 'text', 'photo'])
-        def addBDfilm(message):
-            Channel.objects.get_or_create(id_channel=message.chat.id) #добавления канала в базу
-            id = Channel.objects.get(id_channel=message.chat.id) #получение строки из канала
+        # @bot.channel_post_handler(content_types=['video', 'text', 'photo'])
+        # def addBDfilm(message):
+        #     Channel.objects.get_or_create(id_channel=message.chat.id) #добавления канала в базу
+        #     id = Channel.objects.get(id_channel=message.chat.id) #получение строки из канала
 
-            if id.is_super_channel:
-                if message.content_type == "video":
-                    id_video = message.video.file_id
-                    message_text = message.caption    
-                    if message_text:                        
-                        message_text_list = message_text.split(' ; ')
-                        s, _ = Series.objects.get_or_create(name = message_text_list[3])  
-                                                           #последняя строчка это названия cериала(аниме) в которое добавлять видео
-                        video = Video.objects.create(
-                            series = s,
-                            video_id = id_video,
-                            season = message_text_list[0], #первая строчка номер сезоня
-                            number = message_text_list[1], #вторая сстрочка до " ; " номер серии
-                            name =  message_text_list[2],  #третья  строчка это название серии
-                        )
-                        video.save()
-                        bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code>', parse_mode='HTML')
-                if message.content_type == "photo":
-                    id_photo = message.photo[0].file_id
-                    message_text_photo = message.caption
-                    message_text_list = message_text_photo.split(' ; ')
-                    s, cre = Series.objects.get_or_create(
-                        name = message_text_list[0],          #первая строчка названия сериала
-                        defaults={
-                          'poster':  id_photo,
-                          'description': message_text_list[1] #вторая строчка описание этого сериала
-                        })
-                    bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}', parse_mode='HTML')
+        #     if id.is_super_channel:
+        #         if message.content_type == "video":
+        #             id_video = message.video.file_id
+        #             message_text = message.caption    
+        #             if message_text:                        
+        #                 message_text_list = message_text.split(' ; ')
+        #                 s, _ = Series.objects.get_or_create(name = message_text_list[3])  
+        #                                                    #последняя строчка это названия cериала(аниме) в которое добавлять видео
+        #                 video = Video.objects.create(
+        #                     series = s,
+        #                     video_id = id_video,
+        #                     season = message_text_list[0], #первая строчка номер сезоня
+        #                     number = message_text_list[1], #вторая сстрочка до " ; " номер серии
+        #                     name =  message_text_list[2],  #третья  строчка это название серии
+        #                 )
+        #                 video.save()
+        #                 bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code>', parse_mode='HTML')
+        #         if message.content_type == "photo":
+        #             id_photo = message.photo[0].file_id
+        #             message_text_photo = message.caption
+        #             message_text_list = message_text_photo.split(' ; ')
+        #             s, cre = Series.objects.get_or_create(
+        #                 name = message_text_list[0],          #первая строчка названия сериала
+        #                 defaults={
+        #                   'poster':  id_photo,
+        #                   'description': message_text_list[1] #вторая строчка описание этого сериала
+        #                 })
+        #             bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}', parse_mode='HTML')
     
-                    if not cre:
-                        s.poster = id_photo
-                        s.description = message_text_list[1]
-                        s.save()
-                        bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}', parse_mode='HTML')
+        #             if not cre:
+        #                 s.poster = id_photo
+        #                 s.description = message_text_list[1]
+        #                 s.save()
+        #                 bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}', parse_mode='HTML')
 
         bot.infinity_polling() 
         						
