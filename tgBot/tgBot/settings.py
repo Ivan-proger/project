@@ -133,7 +133,8 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
+# Как вызывать pyhton для выполнение команд
+APPEAL_PYTHON = 'python'
 #Bot messages:
 WEBHOOK_WORK = False
 BOT_TOKEN = os.getenv("BOT_TOKEN") #токен

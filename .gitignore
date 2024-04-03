@@ -1,3 +1,5 @@
+*.json
+
 .env
 .idea
 .vscode

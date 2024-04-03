@@ -1,11 +1,12 @@
 import os
+import sys
 import requests
 import asyncio #база для асинхроной работы бота
 import logging #дебаг режим
 import telebot #база бота нашего
 import matplotlib.pyplot as plt #пострение графика активности
 import io #для работы с байтами 
-import datetime
+import datetime # Модуль для работы с временем
 
 from django.db.models import Q
 from django.core.management.base import BaseCommand
@@ -313,6 +314,22 @@ class Command(BaseCommand):
                 else:
                     settings.CHANGE_DESIGN = True
                 await handle_admin_command(call.message, True)
+            # Технические работы включение
+            if call.data == 'tex_work':
+                await bot.delete_message(call.message.chat.id, call.message.id)
+                keyboard = types.InlineKeyboardMarkup(row_width=2)
+                buttonx = types.InlineKeyboardButton(" нет❌ ", callback_data='cancel')
+                buttonY = types.InlineKeyboardButton(" да, точно ✅", callback_data='tex_working')
+                keyboard.add(buttonY, buttonx)                
+                await bot.send_message(call.message.chat.id, "🆘 Вы точно уверенны???\r\n<b>Это может привести к выключению бота</b>", reply_markup=keyboard, parse_mode='HTML')
+            if call.data == 'tex_working':
+                await bot.delete_message(call.message.chat.id, call.message.id)
+                await bot.send_message(call.message.chat.id, "<b>Включён режим технических работ! \r\n#техработы</b>", parse_mode='HTML')
+                # Запуск другой команды
+                os.system(settings.APPEAL_PYTHON+" manage.py techBot")
+                # Завершение скрипта
+                sys.exit()
+
 
 #-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\- конец логигики колбек сообщений
 
@@ -495,8 +512,9 @@ class Command(BaseCommand):
                     button5 = types.InlineKeyboardButton("🎨Выключить режим оформления", callback_data=f'CHANGE_DESIGN')
                 else:
                     button5 = types.InlineKeyboardButton("🎨Включить режим оформления", callback_data=f'CHANGE_DESIGN')
+                button6 = types.InlineKeyboardButton("🧑‍💻Включить режим тех. работ", callback_data=f'tex_work')
                 buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
-                keyboard.add(button, button1, button2, button3, button4, button5,buttonx)     
+                keyboard.add(button, button1, button2, button3, button4, button5, button6, buttonx)     
                 await bot.send_message(message.chat.id, '💌💌💌--Админ панель--💌💌💌', reply_markup=keyboard)
             else:
                 await bot.send_message(message.from_user.id, f'за покупкой рекламы > {settings.CONTACT_TS}', reply_markup=main_keyboard, parse_mode='HTML')
