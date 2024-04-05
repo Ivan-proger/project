@@ -175,161 +175,167 @@ class Command(BaseCommand):
         # обработчик инлайн клавиатуры
         @bot.callback_query_handler(func=lambda call: True)
         async def handle_button_click(call):
-            await update_activity(call.message.chat.id) # обновление последней активности
-            if call.data == 'next_list':
-                await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-                list1 = call.message.text.split('/')
-                list1 = list1[0].split()
-                start = list1[len(list1)-1]
-                await list_mode(call.message, int(start), int(start)+25)
+            try:
+                await update_activity(call.message.chat.id) # обновление последней активности
+                if call.data == 'next_list':
+                    await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+                    list1 = call.message.text.split('/')
+                    list1 = list1[0].split()
+                    start = list1[len(list1)-1]
+                    await list_mode(call.message, int(start), int(start)+25)
 
-            if call.data.split('-')[0] == 'start_watching': # Первая серия под сериалом
-                obj = await sync_to_async(lambda: Series.objects.get(id=int(call.data.split('-')[1])))()
-                await bot.delete_state(call.message.chat.id, call.message.chat.id)
-                await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-                await search_video(call.message, id_series=obj.id, season=1, number=1)
+                if call.data.split('-')[0] == 'start_watching': # Первая серия под сериалом
+                    obj = await sync_to_async(lambda: Series.objects.get(id=int(call.data.split('-')[1])))()
+                    await bot.delete_state(call.message.chat.id, call.message.chat.id)
+                    await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+                    await search_video(call.message, id_series=obj.id, season=1, number=1)
 
-            if call.message.video:
-                # Проверяем, что произошло нажатие на кнопку к видео
-                if call.data.split('-')[0] == 'next_video':
-                    if await subscription_check(call.message):
-                        inline_keyboard = call.message.reply_markup
-                        if inline_keyboard.keyboard:
-                            if inline_keyboard.keyboard[0]:
-                                inline_keyboard.keyboard[0].pop(0)  # Удаляем первую кнопку
-                                # Редактируем сообщение с обновленной инлайн клавиатурой
-                                await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=inline_keyboard)
-                        try:
-                            video = await sync_to_async(lambda: Video.objects.get(id=call.data.split('-')[1]))()
-                            if await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season, number=video.number+1).all()))():
-                                await search_video(call.message, id_series=video.series_id, season=video.season, number=video.number+1)
-                            elif await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season+1, number=1).all()))():
-                                await search_video(call.message, id_series=video.series_id, season=video.season+1, number=1)
-                            else:
-                                await bot.send_message(call.message.chat.id,'Это было последнее видеo😢', reply_markup=main_keyboard)
-                        except:
-                            await bot.send_message(call.message.chat.id,'Произошла ошибка🤬', reply_markup=main_keyboard)
+                if call.message.video:
+                    # Проверяем, что произошло нажатие на кнопку к видео
+                    if call.data.split('-')[0] == 'next_video':
+                        if await subscription_check(call.message):
+                            inline_keyboard = call.message.reply_markup
+                            if inline_keyboard.keyboard:
+                                if inline_keyboard.keyboard[0]:
+                                    inline_keyboard.keyboard[0].pop(0)  # Удаляем первую кнопку
+                                    # Редактируем сообщение с обновленной инлайн клавиатурой
+                                    await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=inline_keyboard)
+                            try:
+                                video = await sync_to_async(lambda: Video.objects.get(id=call.data.split('-')[1]))()
+                                if await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season, number=video.number+1).all()))():
+                                    await search_video(call.message, id_series=video.series_id, season=video.season, number=video.number+1)
+                                elif await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season+1, number=1).all()))():
+                                    await search_video(call.message, id_series=video.series_id, season=video.season+1, number=1)
+                                else:
+                                    await bot.send_message(call.message.chat.id,'Это было последнее видеo😢', reply_markup=main_keyboard)
+                            except:
+                                await bot.send_message(call.message.chat.id,'Произошла ошибка🤬', reply_markup=main_keyboard)
 
-            # Закрытие панельки
-            if call.data == 'cancel':
-                await bot.delete_message(call.message.chat.id, call.message.message_id)
-            if call.data.split('-')[0] == 'add':
-                if await sync_to_async(lambda: list(Users.objects.filter(external_id=int(call.data.split('-')[1]), is_superuser=True).all()))():
+                # Закрытие панельки
+                if call.data == 'cancel':
                     await bot.delete_message(call.message.chat.id, call.message.message_id)
-                    await bot.send_message(call.message.chat.id, f'Введите клавиатуру так: \r\n<code>Название_кнопки - url </code>:', reply_markup=cancel_keyboard, parse_mode='HTML')
-                    await bot.set_state(call.message.chat.id, MyStates.admin_keybord_add_set, call.message.chat.id)
+                if call.data.split('-')[0] == 'add':
+                    if await sync_to_async(lambda: list(Users.objects.filter(external_id=int(call.data.split('-')[1]), is_superuser=True).all()))():
+                        await bot.delete_message(call.message.chat.id, call.message.message_id)
+                        await bot.send_message(call.message.chat.id, f'Введите клавиатуру так: \r\n<code>Название_кнопки - url </code>:', reply_markup=cancel_keyboard, parse_mode='HTML')
+                        await bot.set_state(call.message.chat.id, MyStates.admin_keybord_add_set, call.message.chat.id)
 
-            # Обрабатываем нажатие на кнопку "Назад"
-            if call.data.startswith("prevpage"):
-                current_page = int(call.data.split("_")[1])
-                if int(current_page) > 1:
-                    await send_page1(call.message, current_page - 1)
-            # Обрабатываем нажатие на кнопку "Далее"
-            elif call.data.startswith("nextpage"):
-                current_page = int(call.data.split("_")[1])
-                if int(current_page) < await get_total_pages():
-                    await send_page1(call.message, current_page + 1)
-            if call.data.startswith("series"):
-                await bot.delete_message(call.message.chat.id, call.message.id)
-                await search_series(call.message, await search_obj_series(call.data.split("_")[1]))
-
-            # проверка на подписку
-            if call.data == 'check_subscription':
-                user = await sync_to_async(lambda: Users.objects.get(external_id=call.message.chat.id))()
-                channels = await sync_to_async(lambda: list(Channel.objects.filter(id_advertising=True)))()
-                i=0
-                for channel in channels:
-                    x = await bot.get_chat_member(channel.id_channel, user.external_id)
-                    if x.status == "member" or x.status == "creator" or x.status == "administrator":
-                        i += 1
-                if i == len(channels) or user.is_superuser == True:
-                    user.is_subscription = True
-                    # Обновляем статистику пришедших к каналу юзеров
-                    channels = await sync_to_async(lambda: list(Channel.objects.filter(id_advertising=True)))()
-                    for channel in channels:
-                        channel.subscribers_added += 1
-                        await channel.asave()
+                # Обрабатываем нажатие на кнопку "Назад"
+                if call.data.startswith("prevpage"):
+                    current_page = int(call.data.split("_")[1])
+                    if int(current_page) > 1:
+                        await send_page1(call.message, current_page - 1)
+                # Обрабатываем нажатие на кнопку "Далее"
+                elif call.data.startswith("nextpage"):
+                    current_page = int(call.data.split("_")[1])
+                    if int(current_page) < await get_total_pages():
+                        await send_page1(call.message, current_page + 1)
+                if call.data.startswith("series"):
                     await bot.delete_message(call.message.chat.id, call.message.id)
-                    await bot.send_message(call.message.chat.id, "Все ограничения сняты✅, нажимте на кнопки ниже для пользования нашим сервисом!🤗")
-                    await user.asave()
+                    await search_series(call.message, await search_obj_series(call.data.split("_")[1]))
+
+                # проверка на подписку
+                if call.data == 'check_subscription':
+                    user = await sync_to_async(lambda: Users.objects.get(external_id=call.message.chat.id))()
+                    channels = await sync_to_async(lambda: list(Channel.objects.filter(id_advertising=True)))()
+                    i=0
+                    for channel in channels:
+                        x = await bot.get_chat_member(channel.id_channel, user.external_id)
+                        if x.status == "member" or x.status == "creator" or x.status == "administrator":
+                            i += 1
+                    if i == len(channels) or user.is_superuser == True:
+                        user.is_subscription = True
+                        # Обновляем статистику пришедших к каналу юзеров
+                        channels = await sync_to_async(lambda: list(Channel.objects.filter(id_advertising=True)))()
+                        for channel in channels:
+                            channel.subscribers_added += 1
+                            await channel.asave()
+                        await bot.delete_message(call.message.chat.id, call.message.id)
+                        await bot.send_message(call.message.chat.id, "Все ограничения сняты✅, нажимте на кнопки ниже для пользования нашим сервисом!🤗")
+                        await user.asave()
+                    else:
+                        await bot.answer_callback_query(callback_query_id=call.id, text='Вы не подписались❌')
+
+                # обнуления рекламной подписки для всех пользователей
+                if call.data == 'reset_is_subscription':
+                    await bot.delete_message(call.message.chat.id, call.message.id)
+                    users = await sync_to_async(lambda: list(Users.objects.all()))()
+                    # Обновляем значение поля is_subscription на False для каждого объекта
+                    for user in users:
+                        user.is_subscription = False
+                        await user.asave()
+                    await bot.send_message(call.message.chat.id, "✅Все пользователи снова будут проверяться на подписку рекламных каналов!")
+
+                # Создания и отправка графика
+                if call.data == 'graf': 
+                    await bot.delete_message(call.message.chat.id, call.message.id)
+                    # Вычисляем дату, которая находится за 31 деньми до текущей даты
+                    start_date = datetime.date.today() - datetime.timedelta(days=31)
+                    # Получить все даты и все значения
+                    all_dates = await sync_to_async(lambda: list(ServiceUsage.objects.filter(date__gte=start_date).values_list('date', flat=True)))()
+                    all_values = await sync_to_async(lambda: list(ServiceUsage.objects.filter(date__gte=start_date).values_list('count', flat=True)))()
+                    # Преобразуем даты в формат день-месяц для отображения на графике
+                    short_dates = [date.strftime('%d-%m') for date in all_dates]
+                    plt.bar(range(len(all_values)), all_values, edgecolor='black', color='pink')
+                    # Устанавливаем короткие даты на оси X
+                    plt.xticks(range(len(all_values)), short_dates, rotation=45)
+                    plt.grid(axis='y', linestyle='--', linewidth=1)
+                    plt.title("Статистика посещений пользователями за 31 день:")
+                    plt.ylabel("Количество уникальных пользователей")
+                    plt.gca().set_facecolor('#D3D3D3')  
+                    # Сохраняем график в байтовый объект
+                    buffer = io.BytesIO()
+                    plt.savefig(buffer, format='png')
+                    buffer.seek(0) #читаем файл сначала чтобы все отправилось в тг
+
+                    await bot.send_photo(call.message.chat.id, photo=buffer, caption="🔝Статистика уникального использования за 31 день🔝")
+                    plt.close()
+                    buffer.close()
+                if call.data == 'fail_txt_bd':
+                    await bot.delete_message(call.message.chat.id, call.message.id)
+                    # Создаем файл с ID пользователей 
+                    async def write_file(users, filename):
+                        async with aio_open(filename, 'w') as file:
+                            async for user in users:
+                                await file.write(f'{user.external_id}\n')
+                    # Отправляем его
+                    async def send_file(bot, chat_id, filename):
+                        with open(filename, 'rb') as file:
+                            await bot.send_document(chat_id, file, caption=f'Список пользователей ({timezone.now().strftime("%Y-%m-%d %H:%M:%S")})')
+
+                    users = await sync_to_async(lambda: Users.objects.all())()
+                    filename = 'users.txt'
+                    await write_file(users, filename)
+                    await send_file(bot, call.message.chat.id, filename)
+                # Изменение оформления да/нет
+                if call.data == 'CHANGE_DESIGN':
+                    await bot.delete_message(call.message.chat.id, call.message.id)
+                    if settings.CHANGE_DESIGN:
+                        settings.CHANGE_DESIGN = False
+                    else:
+                        settings.CHANGE_DESIGN = True
+                    await handle_admin_command(call.message, True)
+                # Технические работы включение
+                if call.data == 'tex_work':
+                    await bot.delete_message(call.message.chat.id, call.message.id)
+                    keyboard = types.InlineKeyboardMarkup(row_width=2)
+                    buttonx = types.InlineKeyboardButton(" нет❌ ", callback_data='cancel')
+                    buttonY = types.InlineKeyboardButton(" да, точно ✅", callback_data='tex_working')
+                    keyboard.add(buttonY, buttonx)                
+                    await bot.send_message(call.message.chat.id, "🆘 Вы точно уверенны???\r\n<b>Это может привести к выключению бота</b>", reply_markup=keyboard, parse_mode='HTML')
+                if call.data == 'tex_working':
+                    await bot.delete_message(call.message.chat.id, call.message.id)
+                    await bot.send_message(call.message.chat.id, "<b>Включён режим технических работ! \r\n#техработы</b>", parse_mode='HTML')
+                    # Запуск другой команды
+                    os.system(settings.APPEAL_PYTHON+" manage.py techBot")
+                    # Завершение скрипта
+                    sys.exit()
+            except Exception as e:
+                if settings.DEBUG:
+                    logger.error(e)
                 else:
-                    await bot.answer_callback_query(callback_query_id=call.id, text='Вы не подписались❌')
-
-            # обнуления рекламной подписки для всех пользователей
-            if call.data == 'reset_is_subscription':
-                await bot.delete_message(call.message.chat.id, call.message.id)
-                users = await sync_to_async(lambda: list(Users.objects.all()))()
-                # Обновляем значение поля is_subscription на False для каждого объекта
-                for user in users:
-                    user.is_subscription = False
-                    await user.asave()
-                await bot.send_message(call.message.chat.id, "✅Все пользователи снова будут проверяться на подписку рекламных каналов!")
-
-            # Создания и отправка графика
-            if call.data == 'graf': 
-                await bot.delete_message(call.message.chat.id, call.message.id)
-                # Вычисляем дату, которая находится за 31 деньми до текущей даты
-                start_date = datetime.date.today() - datetime.timedelta(days=31)
-                # Получить все даты и все значения
-                all_dates = await sync_to_async(lambda: list(ServiceUsage.objects.filter(date__gte=start_date).values_list('date', flat=True)))()
-                all_values = await sync_to_async(lambda: list(ServiceUsage.objects.filter(date__gte=start_date).values_list('count', flat=True)))()
-                # Преобразуем даты в формат день-месяц для отображения на графике
-                short_dates = [date.strftime('%d-%m') for date in all_dates]
-                plt.bar(range(len(all_values)), all_values, edgecolor='black', color='pink')
-                # Устанавливаем короткие даты на оси X
-                plt.xticks(range(len(all_values)), short_dates, rotation=45)
-                plt.grid(axis='y', linestyle='--', linewidth=1)
-                plt.title("Статистика посещений пользователями за 31 день:")
-                plt.ylabel("Количество уникальных пользователей")
-                plt.gca().set_facecolor('#D3D3D3')  
-                # Сохраняем график в байтовый объект
-                buffer = io.BytesIO()
-                plt.savefig(buffer, format='png')
-                buffer.seek(0) #читаем файл сначала чтобы все отправилось в тг
-
-                await bot.send_photo(call.message.chat.id, photo=buffer, caption="🔝Статистика уникального использования за 31 день🔝")
-                plt.close()
-                buffer.close()
-            if call.data == 'fail_txt_bd':
-                await bot.delete_message(call.message.chat.id, call.message.id)
-                # Создаем файл с ID пользователей 
-                async def write_file(users, filename):
-                    async with aio_open(filename, 'w') as file:
-                        async for user in users:
-                            await file.write(f'{user.external_id}\n')
-                # Отправляем его
-                async def send_file(bot, chat_id, filename):
-                    with open(filename, 'rb') as file:
-                        await bot.send_document(chat_id, file, caption=f'Список пользователей ({timezone.now().strftime("%Y-%m-%d %H:%M:%S")})')
-
-                users = await sync_to_async(lambda: Users.objects.all())()
-                filename = 'users.txt'
-                await write_file(users, filename)
-                await send_file(bot, call.message.chat.id, filename)
-            # Изменение оформления да/нет
-            if call.data == 'CHANGE_DESIGN':
-                await bot.delete_message(call.message.chat.id, call.message.id)
-                if settings.CHANGE_DESIGN:
-                    settings.CHANGE_DESIGN = False
-                else:
-                    settings.CHANGE_DESIGN = True
-                await handle_admin_command(call.message, True)
-            # Технические работы включение
-            if call.data == 'tex_work':
-                await bot.delete_message(call.message.chat.id, call.message.id)
-                keyboard = types.InlineKeyboardMarkup(row_width=2)
-                buttonx = types.InlineKeyboardButton(" нет❌ ", callback_data='cancel')
-                buttonY = types.InlineKeyboardButton(" да, точно ✅", callback_data='tex_working')
-                keyboard.add(buttonY, buttonx)                
-                await bot.send_message(call.message.chat.id, "🆘 Вы точно уверенны???\r\n<b>Это может привести к выключению бота</b>", reply_markup=keyboard, parse_mode='HTML')
-            if call.data == 'tex_working':
-                await bot.delete_message(call.message.chat.id, call.message.id)
-                await bot.send_message(call.message.chat.id, "<b>Включён режим технических работ! \r\n#техработы</b>", parse_mode='HTML')
-                # Запуск другой команды
-                os.system(settings.APPEAL_PYTHON+" manage.py techBot")
-                # Завершение скрипта
-                sys.exit()
-
+                    await bot.send_message(call.message.chat.id, f'😨 Произошла ошибка! введите <code>/start</code>', parse_mode='HTML')
+                    
 
 #-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--\-\-\-\-\-\-\- конец логигики колбек сообщений
 
