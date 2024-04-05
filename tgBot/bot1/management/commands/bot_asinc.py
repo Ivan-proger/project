@@ -611,22 +611,20 @@ class Command(BaseCommand):
             id = await sync_to_async(lambda: Channel.objects.get(id_channel=message.chat.id))() # получение строки из канала
 
             if id.is_super_channel:
-                if message.content_type == "text" and message.text == "/help":
-                    await bot.delete_message(message.chat.id, message.id)
-                    await bot.send_message(message.chat.id, settings.HELP_CHANNEL, parse_mode='HTML')
-
-                if message.content_type == "video":
-                    id_video = message.video.file_id
-                    message_text = message.caption    
+                # Функция для добавления видео в бд
+                async def add_video(message_text, id_video):
                     if message_text:                        
                         message_text_list = message_text.split(' ; ')
-                        if str(message_text_list[2]).isdigit():
+                        if str(message_text_list[2]).isdigit() and len(message_text_list) == 3:
                             try:
                                 s = await sync_to_async(lambda: Series.objects.get(id=int(message_text_list[2])))()
                             except:
                                 s, _ = await sync_to_async(lambda: Series.objects.get_or_create(name = message_text_list[2]))()
-                        else:                              # последняя строчка это названия cериала(аниме) в которое добавлять видео можно писать просто id группы видосов
+                        elif len(message_text_list) == 3:  # последняя строчка это названия cериала(аниме) в которое добавлять видео можно писать просто id группы видосов
                             s, _ = await sync_to_async(lambda: Series.objects.get_or_create(name = message_text_list[2]))()
+                        else:
+                            await bot.send_message(message.chat.id, f'📛 <b>Данные под видео недействительны!</b>', parse_mode='HTML')
+                            return False # Выходим из функции если что то не верно
                         number = None
                         video_counts = await sync_to_async(lambda: list(Video.objects.values('series_id', 'season').annotate(num_videos=Count('id'))))()                                    
                         for video_count in video_counts: 
@@ -644,6 +642,28 @@ class Command(BaseCommand):
                             name =  message_text_list[1],  # вторая строчка это название серии
                         ))()
                         await bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code> \r\nCерия №{video.number}, сезон {video.season}\r\n #{s.name}', parse_mode='HTML')
+
+                # Если мы отвечаем на сообщение чтобы сразу все подвязать в базу
+                if message.reply_to_message:
+                    id_video = message.reply_to_message.video.file_id
+                    if message.text == 'repl': # Пишим repl чтобы видео добавилось в базу данных с данными под самим видео, не вписывая новые!
+                        message_text = message.reply_to_message.caption
+                        await add_video(message_text, id_video)
+                    elif len(message.text.split(' ; ')) == 3: # Или сразу пишем все для добавления в базу
+                        message_text = message.text
+                        await add_video(message_text, id_video)
+                    else:
+                        await bot.send_message(message.chat.id, f'📛 <b>Данные недействительны!</b>', parse_mode='HTML')
+
+                if message.content_type == "text" and message.text == "/help":
+                    await bot.delete_message(message.chat.id, message.id)
+                    await bot.send_message(message.chat.id, settings.HELP_CHANNEL, parse_mode='HTML')
+
+                if message.content_type == "video":
+                    id_video = message.video.file_id
+                    message_text = message.caption    
+                    await add_video(message_text, id_video)
+
                 if message.content_type == "photo":
                     if settings.CHANGE_DESIGN and (message.caption == "Start message" or message.caption == "sm"):  # Добавление фото после команды /start
                             with open("StartMessageID", "w") as f:
