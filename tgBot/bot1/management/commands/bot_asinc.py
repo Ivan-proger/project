@@ -46,6 +46,7 @@ class MyStates(StatesGroup):
     admin_quantity_users = State()
     admin_text_add = State()
     admin_confirmation = State()
+    admin_changing_variables = State()
 
 # клавиатуры
 main_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -214,6 +215,10 @@ class Command(BaseCommand):
                 # Закрытие панельки
                 if call.data == 'cancel':
                     await bot.delete_message(call.message.chat.id, call.message.message_id)
+                # Закрытия сообщения и очистка статы
+                if call.data == 'cancelState':
+                    await bot.delete_message(call.message.chat.id, call.message.message_id)
+                    await bot.delete_state(call.message.chat.id, call.message.chat.id)
                 if call.data.split('-')[0] == 'add':
                     if await sync_to_async(lambda: list(Users.objects.filter(external_id=int(call.data.split('-')[1]), is_superuser=True).all()))():
                         await bot.delete_message(call.message.chat.id, call.message.message_id)
@@ -319,7 +324,7 @@ class Command(BaseCommand):
                 if call.data == 'tex_work':
                     await bot.delete_message(call.message.chat.id, call.message.id)
                     keyboard = types.InlineKeyboardMarkup(row_width=2)
-                    buttonx = types.InlineKeyboardButton(" нет❌ ", callback_data='cancel')
+                    buttonx = types.InlineKeyboardButton(" нет ❌ ", callback_data='cancel')
                     buttonY = types.InlineKeyboardButton(" да, точно ✅", callback_data='tex_working')
                     keyboard.add(buttonY, buttonx)                
                     await bot.send_message(call.message.chat.id, "🆘 Вы точно уверенны???\r\n<b>Это может привести к выключению бота</b>", reply_markup=keyboard, parse_mode='HTML')
@@ -330,9 +335,38 @@ class Command(BaseCommand):
                     os.system(settings.APPEAL_PYTHON+" manage.py techBot")
                     # Завершение скрипта
                     sys.exit()
+                if call.data == 'text_const':
+                    await bot.delete_message(call.message.chat.id, call.message.id)
+                    keyboard = types.InlineKeyboardMarkup(row_width=2)
+                    variables_list={'settings.MESSAGE_START' : 'Сообщение /start' , 
+                                    'settings.CONTACT_TS' : 'Контакт тех.под.',
+                                    'settings.COMMAND_HELP' : 'Ответ на /help',
+                                    }
+                    for key, value in variables_list.items():
+                        keyboard.add(types.InlineKeyboardButton(value, callback_data=f'const-{key}'))
+                    keyboard.add(types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel'))
+                    await bot.send_message(call.message.chat.id, "|<b> Будьте крайне осторожны изменяя эти параметры! </b>|", reply_markup=keyboard, parse_mode='HTML')
+                if call.data.startswith("const"):
+                    key = call.data.split('-')[1]
+                    keyboard = types.InlineKeyboardMarkup()
+                    buttontext = types.InlineKeyboardButton(" Вы хотетие изменить ее значение? ", callback_data='None')
+                    buttonx = types.InlineKeyboardButton(" нет ❌ ", callback_data='cancel')
+                    buttonY = types.InlineKeyboardButton(" да, точно ✅", callback_data=f'change-{key}')
+                    keyboard.add(buttontext) 
+                    keyboard.row(buttonY, buttonx)                    
+                    await bot.send_message(call.message.chat.id, f"Данные переменной <code>{key.split('.')[1]}</code>: \r\n{str(eval(key))}",reply_markup=keyboard, parse_mode='HTML')
+                if call.data.split('-')[0] == 'change':
+                    keyboard = types.InlineKeyboardMarkup(row_width=2)
+                    keyboard.add(types.InlineKeyboardButton(f"Нажмите чтобы отменить❌", callback_data='cancelState'))
+                    await bot.set_state(call.message.chat.id, MyStates.admin_changing_variables, call.message.chat.id)
+                    async with bot.retrieve_data(call.message.chat.id, call.message.chat.id) as data:
+                        data['changing_variable'] = call.data.split('-')[1]
+                    await bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=keyboard)
+                    await bot.send_message(call.message.chat.id, 'Введите новое значение: ', reply_markup=cancel_keyboard)
+
             except Exception as e:
                 if settings.DEBUG:
-                    logger.error(e)
+                    logger.error(str(e))
                 else:
                     await bot.send_message(call.message.chat.id, f'😨 Произошла ошибка! введите <code>/start</code>', parse_mode='HTML')
                     
@@ -414,6 +448,22 @@ class Command(BaseCommand):
                     await send_start_message(message)
                 else:
                     await send_start_message(message) 
+        
+        # Функциия админки изменение текстовых констант 
+        @bot.message_handler(state=MyStates.admin_changing_variables)
+        async def sawp_text(message):
+            if message.text.casefold() != 'отмена':
+                async with bot.retrieve_data(message.chat.id, message.chat.id) as data:
+                    key = data['changing_variable']
+                    text = message.text
+                    exec(f"{key} = '''\n{text}\n'''")
+                    with open(f"{key.split('.')[1]}.txt", "w", encoding="utf-8") as f:
+                        f.write(text)
+                    await bot.send_message(message.chat.id, f"Новые данные переменной <code>{key.split('.')[1]}</code>: \r\n{str(eval(key))}",parse_mode='HTML',reply_markup=main_keyboard)
+                await bot.delete_message(message.chat.id, message.id)
+                await bot.delete_state(message.from_user.id, message.chat.id)
+            else:
+                await any_state(message)
 
         # Поиск конкретного сериала  ---- core состовляющая
         @bot.message_handler(state=MyStates.search_series)
@@ -519,8 +569,9 @@ class Command(BaseCommand):
                 else:
                     button5 = types.InlineKeyboardButton("🎨Включить режим оформления", callback_data=f'CHANGE_DESIGN')
                 button6 = types.InlineKeyboardButton("🧑‍💻Включить режим тех. работ", callback_data=f'tex_work')
+                button7 = types.InlineKeyboardButton("👾изменения текстовых констант", callback_data=f'text_const')
                 buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
-                keyboard.add(button, button1, button2, button3, button4, button5, button6, buttonx)     
+                keyboard.add(button, button1, button2, button3, button4, button5, button6,button7 ,buttonx)     
                 await bot.send_message(message.chat.id, '💌💌💌--Админ панель--💌💌💌', reply_markup=keyboard)
             else:
                 await bot.send_message(message.from_user.id, f'за покупкой рекламы > {settings.CONTACT_TS}', reply_markup=main_keyboard, parse_mode='HTML')

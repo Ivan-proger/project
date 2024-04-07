@@ -4,7 +4,7 @@
 .idea
 .vscode
 db.sqlite3
-users.txt
+*.txt
 webhook_cert.pem
 webhook_pkey.pem
 StartMessageID
