@@ -135,6 +135,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Как вызывать pyhton для выполнение команд
 APPEAL_PYTHON = 'python'
+# Вызовов ключевых функций бота до баща в секунду
+MESSAGES_PER_SECOND = 4
 #Bot messages:
 WEBHOOK_WORK = False
 BOT_TOKEN = os.getenv("BOT_TOKEN") #токен
@@ -185,7 +187,7 @@ except FileNotFoundError:
         f.write("Ответ на команду хелп")
     with open("COMMAND_HELP.txt", "r", encoding="utf-8") as f:
         content = f.read()
-COMMAND_HELP = content
+COMMAND_HELP = content + '\r\n' + CONTACT_TS
 
 HELP_CHANNEL = '''
 Разделитель "<code> ; </code>" (точка с запятой) с такими же 
@@ -226,6 +228,10 @@ KEYBOARD_CONFIG = {  #стартовая клавиатура
     "send_page": {
         "title": "Список аниме📋",
         "callback": "send_page"
+    },
+    "help": {
+        "title": "Помощь🛟",
+        "callback": "help"
     },
     
 }

@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
+from django.conf import settings
 from asgiref.sync import sync_to_async
+from datetime import timedelta
 
 #наши юзеры🥰
 class Users(models.Model):
@@ -10,15 +12,28 @@ class Users(models.Model):
     is_subscription = models.BooleanField(default=False, verbose_name='Подписался ли пользователь на каналы-спосноры')
     last_activity = models.DateTimeField(default=timezone.now, verbose_name='Последняя активность')
     ref_code = models.CharField(max_length=20, verbose_name="Код рефералки", blank=True, null=True, default=None)
+    messages_per_second = models.IntegerField(verbose_name="Количество вызовов в секунду", default=0)
+    ban_time = models.DateTimeField(default=None, blank=True, null=True, verbose_name='Забанен во время: ')
+    is_ban = models.BooleanField(default=False, verbose_name='Забанен')
 
     @sync_to_async
     def update_last_activity(self):
+        if self.ban_time is not None:
+            if self.ban_time <= (timezone.now() - timedelta(minutes=1)) and self.is_ban:
+                self.is_ban = False
+        if self.last_activity.second == timezone.now().second:
+            self.messages_per_second += 1
+            if self.messages_per_second >= settings.MESSAGES_PER_SECOND:
+                self.ban_time = timezone.now()
+                self.is_ban = True
+        else:
+            self.messages_per_second = 1
         self.last_activity = timezone.now()
         self.save()
 
     class Meta:
-        verbose_name = 'Юзер'
-        verbose_name_plural = 'Юзеры'
+        verbose_name = 'Пользователь'
+        verbose_name_plural = 'Пользователи'
 
     def __str__(self):
         if self.name:
