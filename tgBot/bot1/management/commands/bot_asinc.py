@@ -39,7 +39,6 @@ else:
 
 # FSM
 class MyStates(StatesGroup):
-    search_video = State()
     search_series = State()
        # admin states
     admin_keybord_add_set = State()
@@ -50,8 +49,10 @@ class MyStates(StatesGroup):
 
 # клавиатуры
 main_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+main_board = []
 for key, value in settings.KEYBOARD_CONFIG.items():
-    main_keyboard.add(types.KeyboardButton(value['title']))
+    main_board.append(types.KeyboardButton(value['title']))
+main_keyboard.add(*main_board)
 
 cancel_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
 cancel_keyboard.add(types.KeyboardButton(settings.CANCEL_MESSAGE)) 
@@ -116,7 +117,6 @@ async def send_page(message):
             msg = await bot.send_photo(message.chat.id, file_id)
     else:
         msg = await bot.send_message(message.chat.id, settings.LIST_MESSAGE, parse_mode="HTML")
-    #msg = await bot.send_message(message.chat.id, settings.LIST_MESSAGE)
     await send_page1(msg)
 # Функция для отправки сообщения с клавиатурой
 async def send_page1(message, current_page=1):
@@ -196,7 +196,6 @@ class Command(BaseCommand):
 
                     if call.data.split('-')[0] == 'start_watching': # Первая серия под сериалом
                         obj = await sync_to_async(lambda: Series.objects.get(id=int(call.data.split('-')[1])))()
-                        await bot.delete_state(call.message.chat.id, call.message.chat.id)
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
                         await search_video(call.message, id_series=obj.id, season=1, number=1)
                     if call.data.split("_")[0] == 'season':
@@ -213,8 +212,6 @@ class Command(BaseCommand):
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)
                     if call.data.split("_")[0] == 'video':
                         obj = await sync_to_async(lambda: Series.objects.get(id=int(call.data.split('_')[1])))()
-                        await bot.delete_state(call.message.chat.id, call.message.chat.id)
-                        await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
                         number_season = call.data.split("_")[2]
                         number_video = call.data.split("_")[3]
                         await search_video(call.message, id_series=obj.id, season=number_season, number=number_video)
@@ -522,11 +519,18 @@ class Command(BaseCommand):
                         if await sync_to_async(lambda: Series.objects.get(id=video_count['series_id']).name)() == obj.name:
                             text_msg_season += f"   - Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
                             season_row.append(types.InlineKeyboardButton(f'Сезон {video_count['season']}', callback_data=f'season_{obj.id}_{video_count['season']}_{video_count['num_videos']}'))
-
-                    
-                    button = types.InlineKeyboardButton("✨ Смотреть первую серию >", callback_data=f'start_watching-{obj.id}')
-                    keyboard_start.row(button)
-                    keyboard_start.add(*season_row)
+                    if len(season_row) == 1:
+                        video = await sync_to_async(lambda: list(Video.objects.filter(series_id=obj.id)))()
+                        keyboard_start = types.InlineKeyboardMarkup(row_width=4)
+                        keyboard_start.row(types.InlineKeyboardButton('Выберите нужну серию:', callback_data='None'))
+                        list_video = []
+                        for i in video:
+                            list_video.append(types.InlineKeyboardButton(str(i.number), callback_data=f'video_{str(i.series_id)}_{str(i.season)}_{str(i.number)}'))
+                        keyboard_start.add(*list_video)
+                    else:
+                        button = types.InlineKeyboardButton("✨ Смотреть первую серию >", callback_data=f'start_watching-{obj.id}')
+                        keyboard_start.row(button)
+                        keyboard_start.add(*season_row)
                     keyboard_start.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{obj.id}'))
 
                     try:
@@ -534,11 +538,7 @@ class Command(BaseCommand):
                                     caption= str(f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n\r\n{text_msg_season}"), reply_markup=keyboard_start, parse_mode='HTML')
                     except:
                         await bot.send_message(message.chat.id, f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n{text_msg_season}", reply_markup=keyboard_start, parse_mode='HTML')
-                    
-                    await bot.send_message(message.chat.id, settings.SEARCH_VIDEO_TEXT ,reply_markup=cancel_keyboard, parse_mode='HTML')
-                    await bot.set_state(message.chat.id, MyStates.search_video, message.chat.id)
-                    async with bot.retrieve_data(message.chat.id, message.chat.id) as data:
-                        data['id_series'] = obj.id
+
                         
                 else:
                     await bot.send_message(message.chat.id, settings.ERROR_VIDEO)  
@@ -547,12 +547,8 @@ class Command(BaseCommand):
                 await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
 
         # Поиск видо как после сериала так и как отдельный метод для вызова где угодно
-        @bot.message_handler(state=MyStates.search_video)
-        async def search_video(message, id_series=None, season=None, number=None):
+        async def search_video(message, id_series, season=None, number=None):
             if await update_activity(message.chat.id): # обновление последней активности 
-                if not id_series:
-                    async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:    
-                        id_series = data['id_series']
                 if not season and not number:
                     list_text = message.text.split()
                     if len(list_text) == 2:
@@ -565,7 +561,7 @@ class Command(BaseCommand):
                     obj_video = await sync_to_async(lambda: Video.objects.get(series_id=id_series,season=season ,number=number))()
 
                     keyboard_next_video = types.InlineKeyboardMarkup()
-                    button = types.InlineKeyboardButton("▶️ Следующая серия", callback_data=f'next_video-{obj_video.id}')
+                    button = types.InlineKeyboardButton("Следующая серия ▶️", callback_data=f'next_video-{obj_video.id}')
                     keyboard_next_video.row(button)
                     button_share = types.InlineKeyboardButton("📢 Поделится", 
                         url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start={id_series}_{obj_video.season}_{obj_video.number}') #создание ссылки поделится
@@ -806,7 +802,6 @@ class Command(BaseCommand):
                             await bot.send_message(message.chat.id, f'Успешно изменён сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description} \r\n#{s.name}', parse_mode='HTML')
                         else:
                             await bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}\r\n#{s.name}', parse_mode='HTML')
-                        print('------\n\n\n'+s.poster+"\n\n\n-----")
                     else:
                         await bot.send_message(message.chat.id, f'Фото не было никуда добавлено, перепроверьте введенные данные')
 
