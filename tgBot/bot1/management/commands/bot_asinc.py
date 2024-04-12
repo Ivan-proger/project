@@ -586,7 +586,12 @@ class Command(BaseCommand):
                 all_series = await objects_Series(start_index, end_index)
 
                 async def generate_string(series, bot):
-                    return f'├ ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂'
+                    if len(series.description.split()) <= 1:
+                        return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂'
+                    elif len(series.description) < 75:
+                        return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ —  <i>{series.description}</i>'
+                    else:
+                        return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ — <i>{series.description[:75]}...</i>'
                 data_strings = await asyncio.gather(*[generate_string(series, bot) for series in all_series])
 
                 final_string = "\r\n".join(data_strings)
@@ -605,6 +610,7 @@ class Command(BaseCommand):
                     await bot.send_message(message.chat.id, settings.LIST_MESSAGE + final_string, reply_markup=keyboard_next_video_list_end, parse_mode='HTML')
             else:
                 await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+            await bot.delete_message(message.chat.id, message.id)
 
 
         # Админ команды
