@@ -176,6 +176,39 @@ async def help(message):
     await bot.send_message(message.chat.id, settings.COMMAND_HELP)   
     await bot.delete_state(message.from_user.id, message.chat.id)
 
+async def list_mode(message, start_index=0, end_index=45): 
+    if await update_activity(message.chat.id): # обновление последней активности
+        async def objects_Series(start_index, end_index):    
+            return await sync_to_async(lambda: list(Series.objects.all()[start_index:end_index]))()
+        all_series = await objects_Series(start_index, end_index)
+
+        async def generate_string(series, bot):
+            if len(series.description.split()) <= 1:
+                return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂'
+            elif len(series.description) < 75:
+                return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ —  <i>{series.description}</i>'
+            else:
+                return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ — <i>{series.description[:75]}...</i>'
+        data_strings = await asyncio.gather(*[generate_string(series, bot) for series in all_series])
+
+        final_string = "\r\n".join(data_strings)
+
+        async def count_Series():
+            count = await sync_to_async(Series.objects.count)()
+            return count
+        count = await count_Series()
+
+        if count > end_index:
+            await bot.send_message(message.chat.id, f'{settings.LIST_MESSAGE} {final_string} \r\n│\r\n└Показано  {end_index}/{count}', reply_markup=keyboard_next_video_list, parse_mode='HTML')
+        else:
+            keyboard_next_video_list_end = types.InlineKeyboardMarkup()
+            button = types.InlineKeyboardButton("Это весь наш контен 👾", callback_data='no_work_date')
+            keyboard_next_video_list_end.row(button)
+            await bot.send_message(message.chat.id, settings.LIST_MESSAGE + final_string, reply_markup=keyboard_next_video_list_end, parse_mode='HTML')
+    else:
+        await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+    await bot.delete_message(message.chat.id, message.id)
+
 class Command(BaseCommand):
     help = 'Async Telegram bot.'       
 
@@ -195,8 +228,8 @@ class Command(BaseCommand):
                         await list_mode(call.message, int(start), int(start)+25)
 
                     if call.data.split('-')[0] == 'start_watching': # Первая серия под сериалом
+                        await bot.delete_state(call.message.chat.id, call.message.chat.id)
                         obj = await sync_to_async(lambda: Series.objects.get(id=int(call.data.split('-')[1])))()
-                        await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
                         await search_video(call.message, id_series=obj.id, season=1, number=1)
                     if call.data.split("_")[0] == 'season':
                         id_series = call.data.split("_")[1]
@@ -577,41 +610,6 @@ class Command(BaseCommand):
                 await bot.delete_state(message.from_user.id, message.chat.id)
                 await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
 
-        # Альтернативный список по команде /list
-        @bot.message_handler(commands=['list'])
-        async def list_mode(message, start_index=0, end_index=45): 
-            if await update_activity(message.chat.id): # обновление последней активности
-                async def objects_Series(start_index, end_index):    
-                    return await sync_to_async(lambda: list(Series.objects.all()[start_index:end_index]))()
-                all_series = await objects_Series(start_index, end_index)
-
-                async def generate_string(series, bot):
-                    if len(series.description.split()) <= 1:
-                        return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂'
-                    elif len(series.description) < 75:
-                        return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ —  <i>{series.description}</i>'
-                    else:
-                        return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ — <i>{series.description[:75]}...</i>'
-                data_strings = await asyncio.gather(*[generate_string(series, bot) for series in all_series])
-
-                final_string = "\r\n".join(data_strings)
-
-                async def count_Series():
-                    count = await sync_to_async(Series.objects.count)()
-                    return count
-                count = await count_Series()
-
-                if count > end_index:
-                    await bot.send_message(message.chat.id, f'{settings.LIST_MESSAGE} {final_string} \r\n│\r\n└Показано  {end_index}/{count}', reply_markup=keyboard_next_video_list, parse_mode='HTML')
-                else:
-                    keyboard_next_video_list_end = types.InlineKeyboardMarkup()
-                    button = types.InlineKeyboardButton("Это весь наш контен 👾", callback_data='no_work_date')
-                    keyboard_next_video_list_end.row(button)
-                    await bot.send_message(message.chat.id, settings.LIST_MESSAGE + final_string, reply_markup=keyboard_next_video_list_end, parse_mode='HTML')
-            else:
-                await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
-            await bot.delete_message(message.chat.id, message.id)
-
 
         # Админ команды
         @bot.message_handler(commands=['admin'])
@@ -814,18 +812,18 @@ class Command(BaseCommand):
         # Основное меню настраиваться в конфиге
         @bot.message_handler(content_types=['text'])
         async def work(message):
-            try:
-                if await update_activity(message.chat.id): # Обновление последней активности
-                    if await subscription_check(message):    # Проверка на подписку на рекламные каналы
-                        for key, value in settings.KEYBOARD_CONFIG.items():
-                            if message.text == value['title']:
-                                callback = value['callback']
-                                await globals()[callback](message)
-                                return
-                else:
-                    await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
-            except:
-                await bot.send_message(message.chat.id, f'😨 Произошла ошибка! введите <code>/start</code>', parse_mode='HTML')
+            #try:
+            if await update_activity(message.chat.id): # Обновление последней активности
+                if await subscription_check(message):    # Проверка на подписку на рекламные каналы
+                    for key, value in settings.KEYBOARD_CONFIG.items():
+                        if message.text == value['title']:
+                            callback = value['callback']
+                            await globals()[callback](message)
+                            return
+            else:
+                await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+            #except:
+                #await bot.send_message(message.chat.id, f'😨 Произошла ошибка! введите <code>/start</code>', parse_mode='HTML')
 
         # Регестрация фильтров
         bot.add_custom_filter(asyncio_filters.StateFilter(bot))
