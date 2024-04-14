@@ -333,7 +333,7 @@ class Command(BaseCommand):
                     # обнуления рекламной подписки для всех пользователей
                     if call.data == 'reset_is_subscription':
                         await bot.delete_message(call.message.chat.id, call.message.id)
-                        users = await sync_to_async(lambda: list(Users.objects.all()))()
+                        users = await sync_to_async(lambda: list(Users.objects.all().defer('name', 'last_activity', 'ref_code')))()
                         # Обновляем значение поля is_subscription на False для каждого объекта
                         for user in users:
                             user.is_subscription = False
@@ -377,7 +377,7 @@ class Command(BaseCommand):
                             with open(filename, 'rb') as file:
                                 await bot.send_document(chat_id, file, caption=f'Список пользователей ({timezone.now().strftime("%Y-%m-%d %H:%M:%S")})')
 
-                        users = await sync_to_async(lambda: Users.objects.all())()
+                        users = await sync_to_async(lambda: Users.objects.all().defer('name', 'last_activity', 'ref_code'))()
                         filename = 'users.txt'
                         await write_file(users, filename)
                         await send_file(bot, call.message.chat.id, filename)
@@ -733,9 +733,10 @@ class Command(BaseCommand):
                 await bot.send_message(message.chat.id, 'запускаю шарманку', reply_markup=main_keyboard)
                 async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
                     if data['admin_quantity_users'] != 0:
-                        records = await sync_to_async(lambda: list(Users.objects.all().order_by('?')[:int(data['admin_quantity_users'])]))() # Oпределенный рэндж рассылки
+                        # Oпределенный рэндж рассылки
+                        records = await sync_to_async(lambda: list(Users.objects.all().order_by('?').defer('name', 'last_activity', 'ref_code')[:int(data['admin_quantity_users'])]))() 
                     else:
-                        records = await sync_to_async(lambda: list(Users.objects.all().order_by('?')))()
+                        records = await sync_to_async(lambda: list(Users.objects.all().order_by('?').defer('name', 'last_activity', 'ref_code')))()
                     count = 0
                     for obj in records:
                         try:
