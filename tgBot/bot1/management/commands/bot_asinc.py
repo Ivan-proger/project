@@ -432,6 +432,42 @@ class Command(BaseCommand):
                             data['changing_variable'] = call.data.split('-')[1]
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=keyboard)
                         await bot.send_message(call.message.chat.id, 'Введите новое значение: ', reply_markup=cancel_keyboard)
+                    if call.data == 'MESSAGES_PER_SECOND':
+                        count = settings.MESSAGES_PER_SECOND
+                        keyborad = types.InlineKeyboardMarkup()
+                        button0 = types.InlineKeyboardButton(f'Сейчас лимит: {count}', callback_data="None")
+                        buttonPlus = types.InlineKeyboardButton(f'🟢Добавить', callback_data="PLUS")
+                        buttonMinus = types.InlineKeyboardButton(f'🔴Уменьшить', callback_data="MINUS")
+                        buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
+                        keyborad.row(button0) 
+                        keyborad.row(buttonMinus, buttonPlus)
+                        keyborad.row(buttonx)
+                        await bot.send_message(call.message.chat.id, 
+                        'Изменить допустимое число сообщений которые может отправить пользователь в секунду боту (при перезагрузке бота вернеться к сток занчению) применять при ддос атаках на бота', reply_markup=keyborad)
+                    if call.data == 'PLUS':
+                        settings.MESSAGES_PER_SECOND += 1
+                        count = settings.MESSAGES_PER_SECOND
+                        keyborad = types.InlineKeyboardMarkup()
+                        button0 = types.InlineKeyboardButton(f'Сейчас лимит: {count}', callback_data="None")
+                        buttonPlus = types.InlineKeyboardButton(f'🟢Добавить', callback_data="PLUS")
+                        buttonMinus = types.InlineKeyboardButton(f'🔴Уменьшить', callback_data="MINUS")
+                        buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
+                        keyborad.row(button0) 
+                        keyborad.row(buttonMinus, buttonPlus)
+                        keyborad.row(buttonx)
+                        await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyborad) 
+                    if call.data == 'MINUS':
+                        settings.MESSAGES_PER_SECOND -= 1
+                        count = settings.MESSAGES_PER_SECOND
+                        keyborad = types.InlineKeyboardMarkup()
+                        button0 = types.InlineKeyboardButton(f'Сейчас лимит: {count}', callback_data="None")
+                        buttonPlus = types.InlineKeyboardButton(f'🟢Добавить', callback_data="PLUS")
+                        buttonMinus = types.InlineKeyboardButton(f'🔴Уменьшить', callback_data="MINUS")
+                        buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
+                        keyborad.row(button0) 
+                        keyborad.row(buttonMinus, buttonPlus)
+                        keyborad.row(buttonx)
+                        await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyborad)                                                
                 else:
                     await bot.send_message(call.message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
             except Exception as e:
@@ -625,9 +661,10 @@ class Command(BaseCommand):
                 else:
                     button5 = types.InlineKeyboardButton("🎨Включить режим оформления", callback_data=f'CHANGE_DESIGN')
                 button6 = types.InlineKeyboardButton("🧑‍💻Включить режим тех. работ", callback_data=f'tex_work')
-                button7 = types.InlineKeyboardButton("👾изменения текстовых констант", callback_data=f'text_const')
+                button7 = types.InlineKeyboardButton("👾Изменения текстовых констант", callback_data=f'text_const')
+                button8 = types.InlineKeyboardButton("🤖Количество запросов в сек. для юзеров", callback_data=f'MESSAGES_PER_SECOND')
                 buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
-                keyboard.add(button, button1, button2, button3, button4, button5, button6,button7 ,buttonx)     
+                keyboard.add(button, button1, button2, button3, button4, button5, button6, button7, button8,buttonx)     
                 await bot.send_message(message.chat.id, '💌💌💌--Админ панель--💌💌💌', reply_markup=keyboard)
             else:
                 await bot.send_message(message.from_user.id, f'За покупкой рекламы > {settings.CONTACT_TS}', reply_markup=main_keyboard, parse_mode='HTML')

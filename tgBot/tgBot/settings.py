@@ -135,7 +135,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Как вызывать pyhton для выполнение команд
 APPEAL_PYTHON = 'python'
-# Вызовов ключевых функций бота до баща в секунду
+# Вызовов ключевых функций бота до бана в секунду
 MESSAGES_PER_SECOND = 4
 #Bot messages:
 WEBHOOK_WORK = False
