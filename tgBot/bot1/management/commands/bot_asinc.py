@@ -109,7 +109,7 @@ async def subscription_check(message):
 
 # список всех сериалов
 async def all_items():
-    return await sync_to_async(lambda: list(Series.objects.all()))()
+    return await sync_to_async(lambda: list(Series.objects.all().defer('poster', 'description')))()
 async def send_page(message):
     if os.path.exists('ListMessageID'):
         with open('ListMessageID', "r") as f:
@@ -157,7 +157,7 @@ async def search_obj_series(query):
             return series[0]
     else:
         # Иначе, используем fuzzywuzzy для поиска по имени
-        series = await sync_to_async(lambda: list(Series.objects.all()))()
+        series = await sync_to_async(lambda: list(Series.objects.all().defer('poster', 'description')))()
     if not series:
         return None  # Объект не найден 
     # фильтруем по нашей схожести равной 50
@@ -179,7 +179,7 @@ async def help(message):
 async def list_mode(message, start_index=0, end_index=45): 
     if await update_activity(message.chat.id): # обновление последней активности
         async def objects_Series(start_index, end_index):    
-            return await sync_to_async(lambda: list(Series.objects.all()[start_index:end_index]))()
+            return await sync_to_async(lambda: list(Series.objects.all().defer('poster')[start_index:end_index]))()
         all_series = await objects_Series(start_index, end_index)
 
         async def generate_string(series, bot):
@@ -191,7 +191,7 @@ async def list_mode(message, start_index=0, end_index=45):
                 return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ — <i>{series.description[:75]}...</i>'
         data_strings = await asyncio.gather(*[generate_string(series, bot) for series in all_series])
 
-        final_string = "\r\n".join(data_strings)
+        final_string = "\r\n--------------------------------\r\n".join(data_strings)
 
         async def count_Series():
             count = await sync_to_async(Series.objects.count)()
@@ -571,7 +571,6 @@ class Command(BaseCommand):
                                     caption= str(f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n\r\n{text_msg_season}"), reply_markup=keyboard_start, parse_mode='HTML')
                     except:
                         await bot.send_message(message.chat.id, f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n{text_msg_season}", reply_markup=keyboard_start, parse_mode='HTML')
-
                         
                 else:
                     await bot.send_message(message.chat.id, settings.ERROR_VIDEO)  
