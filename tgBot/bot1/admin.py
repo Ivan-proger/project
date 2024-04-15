@@ -18,7 +18,7 @@ class VideoInline(admin.TabularInline):
 @admin.register(Series)
 class SeriesAdmin(admin.ModelAdmin):
     inlines = [VideoInline]
-    list_display = ("id", 'name', 'count_videos')
+    list_display = ("id", 'name', 'count_videos', 'is_release')
     search_fields = ("name", "description")
 
     def get_queryset(self, request):

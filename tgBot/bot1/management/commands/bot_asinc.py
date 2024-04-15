@@ -109,7 +109,7 @@ async def subscription_check(message):
 
 # список всех сериалов
 async def all_items():
-    return await sync_to_async(lambda: list(Series.objects.all().defer('poster', 'description')))()
+    return await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster', 'description')))()
 async def send_page(message):
     if os.path.exists('ListMessageID'):
         with open('ListMessageID', "r") as f:
@@ -152,22 +152,25 @@ async def search_mode(message):
 async def search_obj_series(query):
     # Если запрос - это число, ищем по id
     if str(query).isdigit():
-        series = await sync_to_async(lambda: list(Series.objects.filter(id=int(query)).all()))()
+        series = await sync_to_async(lambda: list(Series.objects.filter(id=int(query), is_release=True).all()))()
         if series:
             return series[0]
     else:
         # Иначе, используем fuzzywuzzy для поиска по имени
-        series = await sync_to_async(lambda: list(Series.objects.all().defer('poster', 'description')))()
-    if not series:
-        return None  # Объект не найден 
+        series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True)))()
     # фильтруем по нашей схожести равной 50
-    filtered_series = [item for item in series if fuzz.ratio(item.name, query) >= 70]
+    filtered_series = [item for item in series if fuzz.ratio(item.name, query) >= 50]
+    if not filtered_series:
+        filtered_series = [item for item in series if query in item.description]
+        if not filtered_series:
+            filtered_series = [item for item in series if fuzz.ratio(item.description, query) >= 20]
     # Если найден только один объект, возвращаем его
-    
     if len(filtered_series) == 1:
         return filtered_series[0]
     # Если найдено несколько объектов, возвращаем объект с наивысшим коэффициентом схожести
-    best_match = max(filtered_series, key=lambda x: fuzz.ratio(x.name, query), default=None)
+    best_match = max(filtered_series, key=lambda x: fuzz.ratio(x.name, query), default=None) 
+    if best_match == None:
+        max(filtered_series, key=lambda x: fuzz.ratio(x.description, query), default=None)
     return best_match   
 
 # Ответ на помощь
@@ -179,7 +182,7 @@ async def help(message):
 async def list_mode(message, start_index=0, end_index=45): 
     if await update_activity(message.chat.id): # обновление последней активности
         async def objects_Series(start_index, end_index):    
-            return await sync_to_async(lambda: list(Series.objects.all().defer('poster')[start_index:end_index]))()
+            return await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster')[start_index:end_index]))()
         all_series = await objects_Series(start_index, end_index)
 
         async def generate_string(series, bot):
@@ -247,6 +250,7 @@ class Command(BaseCommand):
                         obj = await sync_to_async(lambda: Series.objects.get(id=int(call.data.split('_')[1])))()
                         number_season = call.data.split("_")[2]
                         number_video = call.data.split("_")[3]
+                        await bot.delete_state(call.message.chat.id, call.message.chat.id)
                         await search_video(call.message, id_series=obj.id, season=number_season, number=number_video)
                     if call.data.split('_')[0] == 'backSeries':
                         obj = await search_obj_series(call.data.split('_')[1])
@@ -586,7 +590,7 @@ class Command(BaseCommand):
                     season_row = []
                     for video_count in video_counts: 
                         if await sync_to_async(lambda: Series.objects.get(id=video_count['series_id']).name)() == obj.name:
-                            text_msg_season += f"   - Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
+                            text_msg_season += f"   ▪ Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
                             season_row.append(types.InlineKeyboardButton(f'Сезон {video_count['season']}', callback_data=f'season_{obj.id}_{video_count['season']}_{video_count['num_videos']}'))
                     if len(season_row) == 1:
                         video = await sync_to_async(lambda: list(Video.objects.filter(series_id=obj.id)))()
@@ -602,6 +606,8 @@ class Command(BaseCommand):
                         keyboard_start.add(*season_row)
                     keyboard_start.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{obj.id}'))
 
+                    await bot.send_message(message.chat.id, 
+                    f'🪄Вот что удалось найти! Вы можете еще раз задать новый поисковой запрос, если вы искали что-то другое или ввести `{settings.CANCEL_MESSAGE}` для отмены поиска.', parse_mode='html')
                     try:
                         await bot.send_photo(message.chat.id, obj.poster,
                                     caption= str(f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n\r\n{text_msg_season}"), reply_markup=keyboard_start, parse_mode='HTML')
@@ -612,7 +618,8 @@ class Command(BaseCommand):
                     await bot.send_message(message.chat.id, settings.ERROR_VIDEO)  
             else:
                 await bot.delete_state(message.from_user.id, message.chat.id)
-                await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+                await bot.send_message(message.chat.id, 
+                '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
 
         # Поиск видо как после сериала так и как отдельный метод для вызова где угодно
         async def search_video(message, id_series, season=None, number=None):

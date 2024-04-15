@@ -41,11 +41,12 @@ class Users(models.Model):
         else:
             return str(self.external_id)
 
-#куда будут привязаны все видео
+# Куда будут привязаны все видео
 class Series(models.Model):
     poster = models.CharField(max_length=257, blank=True, default='', verbose_name='Изображение для сериала(по ID телеграмма)')
     name = models.CharField(max_length=40)
     description = models.TextField(blank=True, default='', verbose_name='Описание')
+    is_release = models.BooleanField(default=False, verbose_name='Аниме доступно пользователем')
 
     class Meta:
         verbose_name = 'Сериал'
