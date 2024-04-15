@@ -15,11 +15,19 @@ class VideoInline(admin.TabularInline):
     readonly_fields = ('season', 'number', 'video_id')
     ordering = ('season', 'number')
 
+def make_released(modeladmin, request, queryset):
+    """
+    Действие, которое меняет значение поля `is_release` на True для выделенных объектов.
+    """
+    queryset.update(is_release=True)
+make_released.short_description = 'Сделать доступными'
+
 @admin.register(Series)
 class SeriesAdmin(admin.ModelAdmin):
     inlines = [VideoInline]
     list_display = ("id", 'name', 'count_videos', 'is_release')
     search_fields = ("name", "description")
+    actions = [make_released]
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -41,7 +49,7 @@ class ChannelAdmin(admin.ModelAdmin):
 
 @admin.register(Video)
 class VideoAdmin(admin.ModelAdmin):
-    list_display = ("name", "series")
+    list_display = ("name", "series", 'season', 'number')
     list_filter = ("series", )
     search_fields = ("name", )
 
