@@ -111,6 +111,7 @@ async def subscription_check(message):
 async def all_items():
     return await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster', 'description')))()
 async def send_page(message):
+    await bot.delete_message(message.chat.id, message.id)
     if os.path.exists('ListMessageID'):
         with open('ListMessageID', "r") as f:
             file_id = f.readline().strip()
@@ -155,23 +156,26 @@ async def search_obj_series(query):
         series = await sync_to_async(lambda: list(Series.objects.filter(id=int(query), is_release=True).all()))()
         if series:
             return series[0]
-    else:
-        # Иначе, используем fuzzywuzzy для поиска по имени
-        series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True)))()
-    # фильтруем по нашей схожести равной 50
-    filtered_series = [item for item in series if fuzz.ratio(item.name, query) >= 50]
-    if not filtered_series:
-        filtered_series = [item for item in series if query in item.description]
+    
+    # Иначе, используем fuzzywuzzy для поиска по имени
+    query = str(query)
+    series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True)))()
+    if series:
+        # фильтруем по нашей схожести равной 50
+        filtered_series = [item for item in series if fuzz.ratio(item.name, query) >= 50]
         if not filtered_series:
-            filtered_series = [item for item in series if fuzz.ratio(item.description, query) >= 20]
-    # Если найден только один объект, возвращаем его
-    if len(filtered_series) == 1:
-        return filtered_series[0]
-    # Если найдено несколько объектов, возвращаем объект с наивысшим коэффициентом схожести
-    best_match = max(filtered_series, key=lambda x: fuzz.ratio(x.name, query), default=None) 
-    if best_match == None:
-        max(filtered_series, key=lambda x: fuzz.ratio(x.description, query), default=None)
-    return best_match   
+            filtered_series = [item for item in series if query in item.description]
+            if not filtered_series:
+                filtered_series = [item for item in series if fuzz.ratio(item.description, query) >= 20]
+        # Если найден только один объект, возвращаем его
+        if len(filtered_series) == 1:
+            return filtered_series[0]
+        # Если найдено несколько объектов, возвращаем объект с наивысшим коэффициентом схожести
+        best_match = max(filtered_series, key=lambda x: fuzz.ratio(x.name, query), default=None) 
+        if best_match == None:
+            max(filtered_series, key=lambda x: fuzz.ratio(x.description, query), default=None)
+        return best_match   
+    return False
 
 # Ответ на помощь
 async def help(message):
@@ -194,7 +198,7 @@ async def list_mode(message, start_index=0, end_index=45):
                 return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ — <i>{series.description[:75]}...</i>'
         data_strings = await asyncio.gather(*[generate_string(series, bot) for series in all_series])
 
-        final_string = "\r\n--------------------------------\r\n".join(data_strings)
+        final_string = "\r\n➖➖➖➖➖➖➖➖➖➖\r\n".join(data_strings)
 
         async def count_Series():
             count = await sync_to_async(Series.objects.count)()
@@ -403,7 +407,14 @@ class Command(BaseCommand):
                         await bot.send_message(call.message.chat.id, "🆘 Вы точно уверенны???\r\n<b>Это может привести к выключению бота</b>", reply_markup=keyboard, parse_mode='HTML')
                     if call.data == 'tex_working':
                         await bot.delete_message(call.message.chat.id, call.message.id)
-                        await bot.send_message(call.message.chat.id, "<b>Включён режим технических работ! \r\n#техработы</b>", parse_mode='HTML')
+                        list_admins = await sync_to_async((lambda: list(Users.objects.filter(is_superuser=True))))()
+                        list_admins_text = []
+                        with open("admins_for_tex_wor.txt", "w", encoding="utf-8") as f:
+                            for admin in list_admins:
+                                f.write(str(admin.external_id))
+                                list_admins_text.append(f'\r\n- @{str(admin.name)}')
+                        text = ''.join(*list_admins_text)
+                        await bot.send_message(call.message.chat.id, f"<b>Включён режим технических работ!\r\nАдмины для разморозки тех работ:{text} \r\n#техработы</b>", parse_mode='HTML')        
                         # Запуск другой команды
                         os.system(settings.APPEAL_PYTHON+" manage.py techBot")
                         # Завершение скрипта
@@ -543,7 +554,11 @@ class Command(BaseCommand):
                         await search_series(message, await search_obj_series(int(text.split('_')[1])))
                     elif len(text.split('_')) == 3:
                         text_list = text.split('_')
-                        await search_video(message, id_series=int(text_list[0]), season=int(text_list[1]), number=int(text_list[2]))
+                        obj_series = await search_obj_series(int(text_list[0]))
+                        if obj_series:
+                            await search_video(message, id_series=int(text_list[0]), season=int(text_list[1]), number=int(text_list[2]))
+                        else:
+                            await bot.send_message(message.chat.id, settings.ERROR_VIDEO)
             else:
                 if created: 
                     # Создаем либо возращаем на то сколькоп ришло к боту просто от команды /start
@@ -581,7 +596,8 @@ class Command(BaseCommand):
             if await update_activity(message.chat.id): # обновление последней активности          
                 if not obj:
                     obj = await search_obj_series(message.text)
-                
+                    await bot.send_message(message.chat.id, 
+                    f'🪄Вот что удалось найти! Вы можете еще раз задать новый поисковой запрос, если вы искали что-то другое или ввести `{settings.CANCEL_MESSAGE}` для отмены поиска.', parse_mode='html')
                 if obj:
                     video_counts = await sync_to_async(lambda: list(Video.objects.values('series_id', 'season').annotate(num_videos=Count('id'))))()
                             
@@ -606,8 +622,7 @@ class Command(BaseCommand):
                         keyboard_start.add(*season_row)
                     keyboard_start.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{obj.id}'))
 
-                    await bot.send_message(message.chat.id, 
-                    f'🪄Вот что удалось найти! Вы можете еще раз задать новый поисковой запрос, если вы искали что-то другое или ввести `{settings.CANCEL_MESSAGE}` для отмены поиска.', parse_mode='html')
+                    
                     try:
                         await bot.send_photo(message.chat.id, obj.poster,
                                     caption= str(f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n\r\n{text_msg_season}"), reply_markup=keyboard_start, parse_mode='HTML')
@@ -617,7 +632,7 @@ class Command(BaseCommand):
                 else:
                     await bot.send_message(message.chat.id, settings.ERROR_VIDEO)  
             else:
-                await bot.delete_state(message.from_user.id, message.chat.id)
+                await bot.delete_state(message.chat.id, message.chat.id)
                 await bot.send_message(message.chat.id, 
                 '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
 
@@ -633,7 +648,7 @@ class Command(BaseCommand):
                         await bot.send_message(message.chat.id, settings.ERROR_VIDEO)
                         return
                 try:
-                    obj_video = await sync_to_async(lambda: Video.objects.get(series_id=id_series,season=season ,number=number))()
+                    obj_video = await sync_to_async(lambda: Video.objects.get(series_id=id_series,season=season,number=number))()
 
                     keyboard_next_video = types.InlineKeyboardMarkup()
                     button = types.InlineKeyboardButton("Следующая серия ▶️", callback_data=f'next_video-{obj_video.id}')
@@ -645,11 +660,11 @@ class Command(BaseCommand):
                     await bot.send_video(message.chat.id, obj_video.video_id,reply_markup=keyboard_next_video ,
                                     caption=f'📺 <b>{obj_video.name}</b> \r\n  Сезон {obj_video.season}, cерия №{obj_video.number}', supports_streaming=True, parse_mode="html")
                     await bot.send_message(message.chat.id, settings.ENJOY_WATCHING , reply_markup=main_keyboard)
-                    await bot.delete_state(message.from_user.id, message.chat.id)
+                    await bot.delete_state(message.chat.id, message.chat.id)
                 except:
                     await bot.send_message(message.chat.id, settings.ERROR_VIDEO)
             else:
-                await bot.delete_state(message.from_user.id, message.chat.id)
+                await bot.delete_state(message.chat.id, message.chat.id)
                 await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
 
 
