@@ -62,7 +62,7 @@ button = types.InlineKeyboardButton("Следующая страница ▶️"
 keyboard_next_video_list.row(button)
 
 # обновление последней активности
-async def update_activity(external_id):
+async def update_activity(external_id, need_user=False):
     try:
         user = await sync_to_async(lambda: Users.objects.get(external_id=external_id))()
         current_date = timezone.now()
@@ -82,7 +82,10 @@ async def update_activity(external_id):
         if user.is_ban:
             return False       
         else:
-            return True
+            if need_user:
+                return user
+            else:
+                return True
     except:
         pass        
 
@@ -593,14 +596,30 @@ class Command(BaseCommand):
         # Поиск конкретного сериала  ---- core состовляющая
         @bot.message_handler(state=MyStates.search_series)
         async def search_series(message, obj=None):
-            if await update_activity(message.chat.id): # обновление последней активности          
+            user = await update_activity(message.chat.id, True) # обновление последней активности 
+            if user:         
                 if not obj:
                     obj = await search_obj_series(message.text)
                     await bot.send_message(message.chat.id, 
                     f'🪄Вот что удалось найти! Вы можете еще раз задать новый поисковой запрос, если вы искали что-то другое или ввести `{settings.CANCEL_MESSAGE}` для отмены поиска.', parse_mode='html')
                 if obj:
                     video_counts = await sync_to_async(lambda: list(Video.objects.values('series_id', 'season').annotate(num_videos=Count('id'))))()
-                            
+                    # Если наш юзер еще не смотрел этот сериал то ставим на просмотрено
+                    series_user = await sync_to_async(lambda: list(user.series.all()))()
+                    if not obj in series_user:
+                        await user.series.aadd(obj)
+                        current_date = timezone.now()
+                        try:                       
+                            # Получение записи по текущей дате
+                            series_usage = await sync_to_async(lambda: SeriesUsage.objects.get(series=obj,date=current_date))()
+                        except SeriesUsage.DoesNotExist:
+                            # Если записи нет, создаем новую и устанавливаем счетчик на 1
+                            series_usage = SeriesUsage(series=obj, date=current_date, count=0)
+                        finally:
+                            # Если запись уже существует, увеличиваем счетчик на 1
+                            series_usage.count += 1
+                            await series_usage.asave()  
+
                     text_msg_season = ''
                     keyboard_start = types.InlineKeyboardMarkup(row_width=2)
                     season_row = []

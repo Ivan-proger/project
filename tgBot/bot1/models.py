@@ -4,42 +4,6 @@ from django.conf import settings
 from asgiref.sync import sync_to_async
 from datetime import timedelta
 
-#наши юзеры🥰
-class Users(models.Model):
-    external_id = models.PositiveIntegerField(verbose_name='Телеграм ID')
-    name = models.CharField(max_length=32, blank=True, null=True, default="")
-    is_superuser = models.BooleanField(default=False, verbose_name='Является ли пользователь админом')
-    is_subscription = models.BooleanField(default=False, verbose_name='Подписался ли пользователь на каналы-спосноры')
-    last_activity = models.DateTimeField(default=timezone.now, verbose_name='Последняя активность')
-    ref_code = models.CharField(max_length=20, verbose_name="Код рефералки", blank=True, null=True, default=None)
-    messages_per_second = models.IntegerField(verbose_name="Количество вызовов в секунду", default=0)
-    ban_time = models.DateTimeField(default=None, blank=True, null=True, verbose_name='Забанен во время: ')
-    is_ban = models.BooleanField(default=False, verbose_name='Забанен')
-
-    @sync_to_async
-    def update_last_activity(self):
-        if self.ban_time is not None:
-            if self.ban_time <= (timezone.now() - timedelta(minutes=1)) and self.is_ban:
-                self.is_ban = False
-        if self.last_activity.second == timezone.now().second:
-            self.messages_per_second += 1
-            if self.messages_per_second >= settings.MESSAGES_PER_SECOND:
-                self.ban_time = timezone.now()
-                self.is_ban = True
-        else:
-            self.messages_per_second = 1
-        self.last_activity = timezone.now()
-        self.save()
-
-    class Meta:
-        verbose_name = 'Пользователь'
-        verbose_name_plural = 'Пользователи'
-
-    def __str__(self):
-        if self.name:
-            return f'{self.name} ({str(self.external_id)})'
-        else:
-            return str(self.external_id)
 
 # Куда будут привязаны все видео
 class Series(models.Model):
@@ -54,7 +18,51 @@ class Series(models.Model):
 
     def __str__(self):
         return self.name
+    
+# Юзеры🥰
+class Users(models.Model):
+    series = models.ManyToManyField(Series, verbose_name='Просмотренное за месяц')
+    external_id = models.PositiveIntegerField(verbose_name='Телеграм ID')
+    name = models.CharField(max_length=32, blank=True, null=True, default="")
+    is_superuser = models.BooleanField(default=False, verbose_name='Является ли пользователь админом')
+    is_subscription = models.BooleanField(default=False, verbose_name='Подписался ли пользователь на каналы-спосноры')
+    last_activity = models.DateTimeField(default=timezone.now, verbose_name='Последняя активность')
+    ref_code = models.CharField(max_length=20, verbose_name="Код рефералки", blank=True, null=True, default=None)
+    messages_per_second = models.IntegerField(verbose_name="Количество вызовов в секунду", default=0)
+    ban_time = models.DateTimeField(default=None, blank=True, null=True, verbose_name='Забанен во время: ')
+    is_ban = models.BooleanField(default=False, verbose_name='Забанен')
 
+    @sync_to_async
+    def update_last_activity(self):
+        current_date = timezone.now()
+        if self.ban_time is not None:
+            if self.ban_time <= (current_date - timedelta(minutes=1)) and self.is_ban:
+                self.is_ban = False
+        if self.last_activity.second == current_date.second:
+            self.messages_per_second += 1
+            if self.messages_per_second >= settings.MESSAGES_PER_SECOND:
+                self.ban_time = current_date
+                self.is_ban = True
+        else:
+            self.messages_per_second = 1
+        # Проверяем, была ли last_activity в прошлом месяце
+        if self.last_activity.year == current_date.year:
+            if self.last_activity.month == current_date.month - 1 or (self.last_activity.month == 12 and current_date.month == 1):
+                self.series.clear()
+
+        self.last_activity = current_date
+        self.save()
+
+    class Meta:
+        verbose_name = 'Пользователь'
+        verbose_name_plural = 'Пользователи'
+
+    def __str__(self):
+        if self.name:
+            return f'{self.name} ({str(self.external_id)})'
+        else:
+            return str(self.external_id)
+        
 #конкретно все видео в боте    
 class Video(models.Model):
     series = models.ForeignKey(Series, on_delete = models.CASCADE, verbose_name='Какому сериалу принадлежит')
@@ -89,7 +97,7 @@ class Channel(models.Model):
             return str(self.id_channel)
 
 
-#статистика сервиса
+# Статистика сервиса
 class ServiceUsage(models.Model):
     date = models.DateField(unique=True)
     count = models.IntegerField(default=0)
@@ -98,7 +106,7 @@ class ServiceUsage(models.Model):
         verbose_name = 'Статистика активности'
         verbose_name_plural = 'Статистика активности'
 
-
+# Статистика рефералок
 class StatisticRef(models.Model):
     name_code = models.CharField(max_length=20, verbose_name="Код рефералки")
     user_sdded = models.IntegerField(verbose_name="Пришло юзеров", default=0)
@@ -107,3 +115,12 @@ class StatisticRef(models.Model):
         verbose_name = 'Статистика рефералок'
         verbose_name_plural = 'Статистика рефералок'
 
+# Статистика сериалов
+class SeriesUsage(models.Model):
+    series = models.ForeignKey(Series, on_delete = models.CASCADE, verbose_name='Для: ')
+    date = models.DateField()
+    count = models.IntegerField(default=0)
+    
+    class Meta:
+        verbose_name = 'Статистика сериала'
+        verbose_name_plural = 'Статистика сериалов'

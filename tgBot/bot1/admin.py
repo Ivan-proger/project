@@ -25,7 +25,7 @@ make_released.short_description = 'Сделать доступными'
 @admin.register(Series)
 class SeriesAdmin(admin.ModelAdmin):
     inlines = [VideoInline]
-    list_display = ("id", 'name', 'count_videos', 'is_release')
+    list_display = ('name',"id", 'count_videos', 'is_release')
     search_fields = ("name", "description")
     actions = [make_released]
 
@@ -60,3 +60,7 @@ class ServiceUsageAdmin(admin.ModelAdmin):
 @admin.register(StatisticRef)
 class StatisticRef(admin.ModelAdmin):
     list_display = ('name_code', 'user_sdded')
+
+@admin.register(SeriesUsage)
+class SeriesUsageAdmin(admin.ModelAdmin):
+    list_display = ('series', 'date', 'count', )
