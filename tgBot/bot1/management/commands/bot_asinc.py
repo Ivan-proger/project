@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt #пострение графика активн�
 import io #для работы с байтами 
 import datetime # Модуль для работы с временем
 
-from django.db.models import Q
 from django.core.management.base import BaseCommand
 from django.db.models import Count
 from django.conf import settings
@@ -17,7 +16,6 @@ from asgiref.sync import sync_to_async # способ работы в асинх
 from bot1.models import * # импорт всех моделей Django
 
 from fuzzywuzzy import fuzz # модуль для поиска с ошибками
-from pathlib import Path # Требуется для корректной работы с файлами
 from aiofiles import open as aio_open  # Import for async file operations
 from telebot import asyncio_filters
 from telebot.async_telebot import AsyncTeleBot, types, ExceptionHandler
@@ -33,7 +31,7 @@ if settings.DEBUG:
         async def handle(self, exception):
             logger.error(exception)
 
-    bot = AsyncTeleBot(settings.BOT_TOKEN, state_storage=StateMemoryStorage(), exception_handler=MyExceptionHandler())
+    bot = AsyncTeleBot(settings.BOT_TOKEN_TEST, state_storage=StateMemoryStorage(), exception_handler=MyExceptionHandler())
 else:
     bot = AsyncTeleBot(settings.BOT_TOKEN, state_storage=StateMemoryStorage())
 

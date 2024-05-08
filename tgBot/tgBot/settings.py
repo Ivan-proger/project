@@ -139,7 +139,8 @@ APPEAL_PYTHON = 'python'
 MESSAGES_PER_SECOND = 4
 #Bot messages:
 WEBHOOK_WORK = False
-BOT_TOKEN = os.getenv("BOT_TOKEN") #токен
+BOT_TOKEN = os.getenv("BOT_TOKEN") # токен
+BOT_TOKEN_TEST = os.getenv("BOT_TOKEN_TEST") # токен тест бота
 CHANGE_DESIGN = True # Можно ли менять картинки оформления
 
 try:

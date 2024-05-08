@@ -5,3 +5,5 @@ Structur fail .env:
 SECRET_KEY= {django key}
 
 BOT_TOKEN= {tg token bot}
+
+BOT_TOKEN_TEST= {tg bot for Debug node token}
