@@ -106,6 +106,9 @@ class ServiceUsage(models.Model):
         verbose_name = 'Статистика активности'
         verbose_name_plural = 'Статистика активности'
 
+    def __str__(self):
+        return f'Статистика за {self.date}'
+
 # Статистика рефералок
 class StatisticRef(models.Model):
     name_code = models.CharField(max_length=20, verbose_name="Код рефералки")
@@ -114,6 +117,9 @@ class StatisticRef(models.Model):
     class Meta:
         verbose_name = 'Статистика рефералок'
         verbose_name_plural = 'Статистика рефералок'
+
+    def __str__(self):
+        return f'Статистика по коду `{self.name_code}`'
 
 # Статистика сериалов
 class SeriesUsage(models.Model):
@@ -124,3 +130,6 @@ class SeriesUsage(models.Model):
     class Meta:
         verbose_name = 'Статистика сериала'
         verbose_name_plural = 'Статистика сериалов'
+
+    def __str__(self):
+        return f'Статистика по `{self.series}` за {str(self.date)[:7]}'

@@ -186,12 +186,17 @@ async def help(message):
     await bot.send_message(message.chat.id, settings.COMMAND_HELP)   
     await bot.delete_state(message.from_user.id, message.chat.id)
 
-async def list_mode(message, start_index=0, end_index=45): 
-    if await update_activity(message.chat.id): # обновление последней активности
-        async def objects_Series(start_index, end_index):    
-            return await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster')[start_index:end_index]))()
-        all_series = await objects_Series(start_index, end_index)
-
+async def list_mode(message, start_index=0, end_index=45, all_series=None): 
+    if not all_series: # Если мы не вызываем метод уже с готовым листом сериалов
+        user = await update_activity(message.chat.id)# обновление последней активности
+        all_series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster')[start_index:end_index]))()
+        reply_text = settings.LIST_MESSAGE
+        await bot.delete_message(message.chat.id, message.id)
+    else:
+        reply_text = "🔥 Самое популярное 🔥 \r\n\r\n"
+        user = True
+    # Проверка на бан юзера   
+    if user:
         async def generate_string(series, bot):
             if len(series.description.split()) <= 1:
                 return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂'
@@ -201,23 +206,16 @@ async def list_mode(message, start_index=0, end_index=45):
                 return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ — <i>{series.description[:75]}...</i>'
         data_strings = await asyncio.gather(*[generate_string(series, bot) for series in all_series])
 
-        final_string = "\r\n➖➖➖➖➖➖➖➖➖➖\r\n".join(data_strings)
+        final_string = "\r\n➖➖➖➖➖➖➖➖➖➖➖➖➖➖\r\n".join(data_strings)
 
-        async def count_Series():
-            count = await sync_to_async(Series.objects.count)()
-            return count
-        count = await count_Series()
+        count = await sync_to_async(Series.objects.count)()
 
         if count > end_index:
-            await bot.send_message(message.chat.id, f'{settings.LIST_MESSAGE} {final_string} \r\n│\r\n└Показано  {end_index}/{count}', reply_markup=keyboard_next_video_list, parse_mode='HTML')
+            await bot.send_message(message.chat.id, f'{reply_text} {final_string} \r\n│\r\n└Показано  {end_index}/{count}', reply_markup=keyboard_next_video_list, parse_mode='HTML')
         else:
-            keyboard_next_video_list_end = types.InlineKeyboardMarkup()
-            button = types.InlineKeyboardButton("Это весь наш контен 👾", callback_data='no_work_date')
-            keyboard_next_video_list_end.row(button)
-            await bot.send_message(message.chat.id, settings.LIST_MESSAGE + final_string, reply_markup=keyboard_next_video_list_end, parse_mode='HTML')
+            await bot.send_message(message.chat.id, reply_text + final_string, parse_mode='HTML')
     else:
         await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
-    await bot.delete_message(message.chat.id, message.id)
 
 class Command(BaseCommand):
     help = 'Async Telegram bot.'       
@@ -269,8 +267,15 @@ class Command(BaseCommand):
                                 season_row.append(types.InlineKeyboardButton(f'Сезон {video_count['season']}', callback_data=f'season_{obj.id}_{video_count['season']}_{video_count['num_videos']}'))
                         keyboard.add(*season_row)
                         keyboard.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{obj.id}'))
-                        await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)                                           
+                        await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)  
+                    # Популярное                                         
+                    if call.data == 'hot_series':
+                        current_date = timezone.now().replace(day=1)
+                        series_ids = await sync_to_async(lambda: list(SeriesUsage.objects.filter(date=current_date).order_by('-count')[:5].values_list('series_id', flat=True)))()           
+                        list_series = await sync_to_async(lambda: list(Series.objects.filter(id__in=series_ids)))()
+                        await list_mode(call.message, all_series=list_series)
 
+                    # Дальше админ команды и т.д.
                     if call.message.video:
                         # Проверяем, что произошло нажатие на кнопку к видео
                         if call.data.split('-')[0] == 'next_video':
@@ -512,22 +517,37 @@ class Command(BaseCommand):
 
         @bot.message_handler(commands=['start'])
         async def start(message):
-            # Отправка приветсвия с фотографией либо без если файл отсуствует 
-            async def send_start_message(message):
-                if os.path.exists('StartMessageID'):
-                    with open('StartMessageID', "r") as f:
-                        file_id = f.readline().strip()
-                        await bot.send_photo(message.chat.id, file_id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
-                else:
-                    await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=main_keyboard, parse_mode="HTML")
-
-            await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-
             user, created = await sync_to_async(Users.objects.get_or_create)(
                 external_id=message.from_user.id,
                 defaults={'name': message.from_user.username,}
             )
+            await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+
+            # Отправка приветсвия с фотографией либо без если файл отсуствует 
+            async def send_start_message(message):
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.add(types.InlineKeyboardButton('Популярное аниме🔥', callback_data='hot_series'))
+                if os.path.exists('StartMessageID'):
+                    with open('StartMessageID', "r") as f:
+                        file_id = f.readline().strip()
+                        await bot.send_photo(message.chat.id, file_id, settings.MESSAGE_START, reply_markup=keyboard, parse_mode="HTML")
+
+                else:
+                    await bot.send_message(message.chat.id, settings.MESSAGE_START, reply_markup=keyboard, parse_mode="HTML")
+            # Если пользователь впервые 
+            if created: 
+                # Создаем либо возращаем на то сколько пришло к боту просто от команды /start
+                statistic_code, _ = await sync_to_async(lambda: StatisticRef.objects.get_or_create(name_code='local'))()
+                statistic_code.user_sdded += 1
+                await statistic_code.asave()  
+                # Ставь рефералку того что юзер просто использовал бота без рефки
+                user.ref_code = 'local'
+                await user.asave()  
+
+                await bot.send_message(message.chat.id, 'Обязательно ознакомся с нашим функционалом!', reply_markup=main_keyboard, parse_mode='html')
+
     
+            # Если пользователь передал еще код рефералки
             if " " in message.text:
                 # выдача сериала или серии по запросу в /start 
                 text = message.text.split()[1]
@@ -549,7 +569,7 @@ class Command(BaseCommand):
                             code_usage.count += 1
                             await code_usage.asave()
                             await bot.send_message(message.chat.id, "Обязательно ознакомся с нашим функционалом!", reply_markup=main_keyboard)
-                            await send_start_message(message)
+
                     else:
                         await bot.send_message(message.chat.id, f"У вас уже имеется реферальный код - <code>{user.ref_code}</code>", parse_mode='HTML')
                 else:
@@ -563,19 +583,7 @@ class Command(BaseCommand):
                         else:
                             await bot.send_message(message.chat.id, settings.ERROR_VIDEO)
             else:
-                if created: 
-                    # Создаем либо возращаем на то сколькоп ришло к боту просто от команды /start
-                    statistic_code, _ = await sync_to_async(lambda: StatisticRef.objects.get_or_create(name_code='local'))()
-                    statistic_code.user_sdded += 1
-                    await statistic_code.asave()  
-                    # Ставь рефералку того что юзер просто использовал бота без рефки
-                    user.ref_code = 'local'
-                    await user.asave()  
-
-                    await bot.send_message(message.chat.id, "Обязательно ознакомся с нашим функционалом!", reply_markup=main_keyboard)
-                    await send_start_message(message)
-                else:
-                    await send_start_message(message) 
+                await send_start_message(message) 
         
         # Функциия админки изменение текстовых констант 
         @bot.message_handler(state=MyStates.admin_changing_variables)
@@ -608,7 +616,7 @@ class Command(BaseCommand):
                     series_user = await sync_to_async(lambda: list(user.series.all()))()
                     if not obj in series_user:
                         await user.series.aadd(obj)
-                        current_date = timezone.now()
+                        current_date = timezone.now().replace(day=1)
                         try:                       
                             # Получение записи по текущей дате
                             series_usage = await sync_to_async(lambda: SeriesUsage.objects.get(series=obj,date=current_date))()
