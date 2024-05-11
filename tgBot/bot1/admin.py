@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.db.models import Count
+from django.core.cache import cache # Кэш
 from bot1.models import *
 
 @admin.register(Users)

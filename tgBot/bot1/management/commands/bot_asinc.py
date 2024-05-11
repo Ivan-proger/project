@@ -12,6 +12,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Count
 from django.conf import settings
 from asgiref.sync import sync_to_async # способ работы в асинхронном режими Djabgo ORM запросов
+from django.core.cache import cache # Кэшируем базу
 
 from bot1.models import * # импорт всех моделей Django
 
@@ -111,7 +112,14 @@ async def subscription_check(message):
 
 # список всех сериалов
 async def all_items():
-    return await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster', 'description')))()
+    # Получить список всех сериалов из кэша
+    all_series = cache.get('all_series')
+    # Если данные в кэше отсутствуют, загрузить их из базы данных
+    if all_series is None:
+        all_series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster', 'description')))()
+        cache.set('all_series', all_series, settings.CACHE_TTL)
+    return all_series
+# Отправка картинки
 async def send_page(message):
     await bot.delete_message(message.chat.id, message.id)
     if os.path.exists('ListMessageID'):
@@ -228,7 +236,7 @@ class Command(BaseCommand):
         @bot.callback_query_handler(func=lambda call: True)
         async def handle_button_click(call):
             try:
-                user = await update_activity(call.message.chat.id)
+                user = await update_activity(call.message.chat.id, True)
                 if user: # обновление последней активности
                     if call.data == 'next_list':
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
@@ -273,47 +281,13 @@ class Command(BaseCommand):
                         keyboard.add(*season_row)
                         keyboard.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{series_id}'))
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)  
+                        
                     # Популярное                                         
                     if call.data == 'hot_series':
                         current_date = timezone.now().replace(day=1)
                         series_ids = await sync_to_async(lambda: list(SeriesUsage.objects.filter(date=current_date).order_by('-count')[:5].values_list('series_id', flat=True)))()           
                         list_series = await sync_to_async(lambda: list(Series.objects.filter(id__in=series_ids)))()
                         await list_mode(call.message, all_series=list_series)
-
-                    # Дальше админ команды и т.д.
-                    if call.message.video:
-                        # Проверяем, что произошло нажатие на кнопку к видео
-                        if call.data.split('-')[0] == 'next_video':
-                            if await subscription_check(call.message):
-                                inline_keyboard = call.message.reply_markup
-                                if inline_keyboard.keyboard:
-                                    if inline_keyboard.keyboard[0]:
-                                        inline_keyboard.keyboard[0].pop(0)  # Удаляем первую кнопку
-                                        # Редактируем сообщение с обновленной инлайн клавиатурой
-                                        await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=inline_keyboard)
-                                try:
-                                    video = await sync_to_async(lambda: Video.objects.get(id=call.data.split('-')[1]))()
-                                    if await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season, number=video.number+1).all()))():
-                                        await search_video(call.message, id_series=video.series_id, season=video.season, number=video.number+1)
-                                    elif await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season+1, number=1).all()))():
-                                        await search_video(call.message, id_series=video.series_id, season=video.season+1, number=1)
-                                    else:
-                                        await bot.send_message(call.message.chat.id,'Это было последнее видеo😢', reply_markup=main_keyboard)
-                                except:
-                                    await bot.send_message(call.message.chat.id,'Произошла ошибка🤬', reply_markup=main_keyboard)
-
-                    # Закрытие панельки
-                    if call.data == 'cancel':
-                        await bot.delete_message(call.message.chat.id, call.message.message_id)
-                    # Закрытия сообщения и очистка статы
-                    if call.data == 'cancelState':
-                        await bot.delete_message(call.message.chat.id, call.message.message_id)
-                        await bot.delete_state(call.message.chat.id, call.message.chat.id)
-                    if call.data.split('-')[0] == 'add':
-                        if await sync_to_async(lambda: list(Users.objects.filter(external_id=int(call.data.split('-')[1]), is_superuser=True).all()))():
-                            await bot.delete_message(call.message.chat.id, call.message.message_id)
-                            await bot.send_message(call.message.chat.id, f'Введите клавиатуру так: \r\n<code>Название_кнопки - url </code>:', reply_markup=cancel_keyboard, parse_mode='HTML')
-                            await bot.set_state(call.message.chat.id, MyStates.admin_keybord_add_set, call.message.chat.id)
 
                     # Обрабатываем нажатие на кнопку "Назад"
                     if call.data.startswith("prevpage"):
@@ -350,6 +324,48 @@ class Command(BaseCommand):
                             await user.asave()
                         else:
                             await bot.answer_callback_query(callback_query_id=call.id, text='Вы не подписались❌')
+
+                    # Дальше админ команды и т.д.
+                    if call.message.video:
+                        # Проверяем, что произошло нажатие на кнопку к видео
+                        if call.data.split('-')[0] == 'next_video':
+                            if await subscription_check(call.message):
+                                inline_keyboard = call.message.reply_markup
+                                if inline_keyboard.keyboard:
+                                    if inline_keyboard.keyboard[0]:
+                                        inline_keyboard.keyboard[0].pop(0)  # Удаляем первую кнопку
+                                        # Редактируем сообщение с обновленной инлайн клавиатурой
+                                        await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=inline_keyboard)
+                                try:
+                                    video = await sync_to_async(lambda: Video.objects.get(id=call.data.split('-')[1]))()
+                                    if await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season, number=video.number+1).all()))():
+                                        await search_video(call.message, id_series=video.series_id, season=video.season, number=video.number+1)
+                                    elif await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season+1, number=1).all()))():
+                                        await search_video(call.message, id_series=video.series_id, season=video.season+1, number=1)
+                                    else:
+                                        await bot.send_message(call.message.chat.id,'Это было последнее видеo😢', reply_markup=main_keyboard)
+                                except:
+                                    await bot.send_message(call.message.chat.id,'Произошла ошибка🤬', reply_markup=main_keyboard)
+
+                    # Закрытие панельки
+                    if call.data == 'cancel':
+                        await bot.delete_message(call.message.chat.id, call.message.message_id)
+                    # Чистим кэш
+                    if call.data == 'cacheclear':
+                        cache.clear()
+                        await bot.answer_callback_query(callback_query_id=call.id, text='Кэш очищен🚮')
+                        await bot.delete_message(call.message.chat.id, call.message.message_id)
+                    # Закрытия сообщения и очистка статы
+                    if call.data == 'cancelState':
+                        await bot.delete_message(call.message.chat.id, call.message.message_id)
+                        await bot.delete_state(call.message.chat.id, call.message.chat.id)
+                    if call.data.split('-')[0] == 'add':
+                        if await sync_to_async(lambda: list(Users.objects.filter(external_id=int(call.data.split('-')[1]), is_superuser=True).all()))():
+                            await bot.delete_message(call.message.chat.id, call.message.message_id)
+                            await bot.send_message(call.message.chat.id, f'Введите клавиатуру так: \r\n<code>Название_кнопки - url </code>:', reply_markup=cancel_keyboard, parse_mode='HTML')
+                            await bot.set_state(call.message.chat.id, MyStates.admin_keybord_add_set, call.message.chat.id)
+
+
 
                     # обнуления рекламной подписки для всех пользователей
                     if call.data == 'reset_is_subscription':
@@ -497,7 +513,9 @@ class Command(BaseCommand):
                         keyborad.row(buttonx)
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyborad)                                                
                 else:
-                    await bot.send_message(call.message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+                    await bot.send_message(call.message.chat.id, 
+                        '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', 
+                        reply_markup=main_keyboard, parse_mode='html')
             except Exception as e:
                 if settings.DEBUG:
                     logger.error(f'\n\n{str(e)}\n\n')
@@ -550,6 +568,9 @@ class Command(BaseCommand):
                 await user.asave()  
 
                 await bot.send_message(message.chat.id, 'Обязательно ознакомся с нашим функционалом!', reply_markup=main_keyboard, parse_mode='html')
+            else:
+                user.name = message.from_user.username
+                await user.asave()
 
     
             # Если пользователь передал еще код рефералки
@@ -730,8 +751,9 @@ class Command(BaseCommand):
                 button6 = types.InlineKeyboardButton("🧑‍💻Включить режим тех. работ", callback_data=f'tex_work')
                 button7 = types.InlineKeyboardButton("👾Изменения текстовых констант", callback_data=f'text_const')
                 button8 = types.InlineKeyboardButton("🤖Количество запросов в сек. для юзеров", callback_data=f'MESSAGES_PER_SECOND')
+                button9 = types.InlineKeyboardButton("🗑Очистить кэш", callback_data=f'cacheclear')
                 buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
-                keyboard.add(button, button1, button2, button3, button4, button5, button6, button7, button8,buttonx)     
+                keyboard.add(button, button1, button2, button3, button4, button5, button6, button7, button8,button9,buttonx)     
                 await bot.send_message(message.chat.id, '💌💌💌--Админ панель--💌💌💌', reply_markup=keyboard)
             else:
                 await bot.send_message(message.from_user.id, f'За покупкой рекламы > {settings.CONTACT_TS}', reply_markup=main_keyboard, parse_mode='HTML')
@@ -861,6 +883,7 @@ class Command(BaseCommand):
                             name =  message_text_list[1],  # вторая строчка это название серии
                         ))()
                         await bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code> \r\nCерия №{video.number}, сезон {video.season}\r\n #{s.name}', parse_mode='HTML')
+                        cache.delete('all_series') # Удаляем кэш
 
                 # Если мы отвечаем на сообщение чтобы сразу все подвязать в базу
                 if message.reply_to_message:
@@ -910,6 +933,7 @@ class Command(BaseCommand):
                             await bot.send_message(message.chat.id, f'Успешно изменён сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description} \r\n#{s.name}', parse_mode='HTML')
                         else:
                             await bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}\r\n#{s.name}', parse_mode='HTML')
+                        cache.delete('all_series') # Удаляем кэш
                     else:
                         await bot.send_message(message.chat.id, f'Фото не было никуда добавлено, перепроверьте введенные данные')
 
