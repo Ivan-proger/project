@@ -89,7 +89,7 @@ async def update_activity(external_id, need_user=False):
 
  # проверка на подписку
 async def subscription_check(message):
-    user = await sync_to_async(lambda: Users.objects.get(external_id=message.chat.id))()
+    user = await sync_to_async(lambda: Users.objects.get(external_id=message.chat.id))()   
     if user.is_subscription == True:    # проверка на подписку на рекламные каналы
         return True
     else:
@@ -107,6 +107,7 @@ async def subscription_check(message):
             await user.asave()
             return True
     return False
+
 
 # список всех сериалов
 async def all_items():
@@ -221,11 +222,14 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         print("\n--- Bot runing ---\n")
 
+
+
         # обработчик инлайн клавиатуры
         @bot.callback_query_handler(func=lambda call: True)
         async def handle_button_click(call):
             try:
-                if await update_activity(call.message.chat.id): # обновление последней активности
+                user = await update_activity(call.message.chat.id)
+                if user: # обновление последней активности
                     if call.data == 'next_list':
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
                         list1 = call.message.text.split('/')
@@ -235,8 +239,7 @@ class Command(BaseCommand):
 
                     if call.data.split('-')[0] == 'start_watching': # Первая серия под сериалом
                         await bot.delete_state(call.message.chat.id, call.message.chat.id)
-                        obj = await sync_to_async(lambda: Series.objects.get(id=int(call.data.split('-')[1])))()
-                        await search_video(call.message, id_series=obj.id, season=1, number=1)
+                        await search_video(call.message, id_series=int(call.data.split('-')[1]), season=1, number=1)
                     if call.data.split("_")[0] == 'season':
                         id_series = call.data.split("_")[1]
                         number_season = call.data.split("_")[2]
@@ -250,21 +253,25 @@ class Command(BaseCommand):
                         keyboard.row(types.InlineKeyboardButton('◀️ Вернуться назад', callback_data=f'backSeries_{id_series}'))
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)
                     if call.data.split("_")[0] == 'video':
-                        obj = await sync_to_async(lambda: Series.objects.get(id=int(call.data.split('_')[1])))()
                         number_season = call.data.split("_")[2]
                         number_video = call.data.split("_")[3]
                         await bot.delete_state(call.message.chat.id, call.message.chat.id)
-                        await search_video(call.message, id_series=obj.id, season=number_season, number=number_video)
+                        await search_video(call.message, id_series=int(call.data.split('_')[1]), season=number_season, number=number_video)
                     if call.data.split('_')[0] == 'backSeries':
-                        obj = await search_obj_series(call.data.split('_')[1])
-                        video_counts = await sync_to_async(lambda: list(Video.objects.values('series_id', 'season').annotate(num_videos=Count('id'))))()
+                        series_id = call.data.split('_')[1]
+                        videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id) \
+                            .values('series_id') \
+                            .annotate(num_videos=Count('id')) \
+                            .values('series_id', 'season','num_videos')))()
                         keyboard = types.InlineKeyboardMarkup(row_width=2)
                         season_row = []
-                        for video_count in video_counts: 
-                            if await sync_to_async(lambda: Series.objects.get(id=video_count['series_id']).name)() == obj.name:
-                                season_row.append(types.InlineKeyboardButton(f'Сезон {video_count['season']}', callback_data=f'season_{obj.id}_{video_count['season']}_{video_count['num_videos']}'))
+                        for video_count in videos:
+                            season_row.append(types.InlineKeyboardButton(
+                                f'Сезон {video_count['season']}', 
+                                callback_data = f'season_{series_id}_{video_count['season']}_{video_count['num_videos']}'
+                                ))
                         keyboard.add(*season_row)
-                        keyboard.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{obj.id}'))
+                        keyboard.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{series_id}'))
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)  
                     # Популярное                                         
                     if call.data == 'hot_series':
@@ -320,7 +327,7 @@ class Command(BaseCommand):
                             await send_page1(call.message, current_page + 1)
                     if call.data.startswith("series"):
                         await bot.delete_message(call.message.chat.id, call.message.id)
-                        await search_series(call.message, await search_obj_series(call.data.split("_")[1]))
+                        await search_series(call.message, await search_obj_series(call.data.split("_")[1]), user)
 
                     # проверка на подписку
                     if call.data == 'check_subscription':
@@ -572,7 +579,7 @@ class Command(BaseCommand):
                         await bot.send_message(message.chat.id, f"У вас уже имеется реферальный код - <code>{user.ref_code}</code>", parse_mode='HTML')
                 else:
                     if text.split('_')[1].isdigit and not len(text.split('_')) == 3 and text.split('_')[0] == 'Serias':
-                        await search_series(message, await search_obj_series(int(text.split('_')[1])))
+                        await search_series(message, await search_obj_series(int(text.split('_')[1])), user)
                     elif len(text.split('_')) == 3:
                         text_list = text.split('_')
                         obj_series = await search_obj_series(int(text_list[0]))
@@ -593,7 +600,9 @@ class Command(BaseCommand):
                     exec(f"{key} = '''\n{text}\n'''")
                     with open(f"{key.split('.')[1]}.txt", "w", encoding="utf-8") as f:
                         f.write(text)
-                    await bot.send_message(message.chat.id, f"Новые данные переменной <code>{key.split('.')[1]}</code>: \r\n{str(eval(key))}",parse_mode='HTML',reply_markup=main_keyboard)
+                    await bot.send_message(message.chat.id, 
+                        f"Новые данные переменной <code>{key.split('.')[1]}</code>: \r\n{str(eval(key))}",parse_mode='HTML',reply_markup=main_keyboard
+                        )
                 await bot.delete_message(message.chat.id, message.id)
                 await bot.delete_state(message.from_user.id, message.chat.id)
             else:
@@ -601,15 +610,16 @@ class Command(BaseCommand):
 
         # Поиск конкретного сериала  ---- core состовляющая
         @bot.message_handler(state=MyStates.search_series)
-        async def search_series(message, obj=None):
-            user = await update_activity(message.chat.id, True) # обновление последней активности 
+        async def search_series(message, obj=None, user=None):
+            if not user:
+                user = await update_activity(message.chat.id, True) # обновление последней активности 
             if user:         
                 if not obj:
                     obj = await search_obj_series(message.text)
-                    await bot.send_message(message.chat.id, 
-                    f'🪄Вот что удалось найти! Вы можете еще раз задать новый поисковой запрос, если вы искали что-то другое или ввести `{settings.CANCEL_MESSAGE}` для отмены поиска.', parse_mode='html')
-                if obj:
-                    video_counts = await sync_to_async(lambda: list(Video.objects.values('series_id', 'season').annotate(num_videos=Count('id'))))()
+                    if obj:
+                        await bot.send_message(message.chat.id, f'🪄Вот что удалось найти! Вы можете еще раз задать новый поисковой запрос, если вы искали что-то другое или ввести `{settings.CANCEL_MESSAGE}` для отмены поиска.', 
+                                               parse_mode='html')
+                if obj:                      
                     # Если наш юзер еще не смотрел этот сериал то ставим на просмотрено
                     series_user = await sync_to_async(lambda: list(user.series.all()))()
                     if not obj in series_user:
@@ -624,28 +634,38 @@ class Command(BaseCommand):
                         finally:
                             # Если запись уже существует, увеличиваем счетчик на 1
                             series_usage.count += 1
-                            await series_usage.asave()  
-
+                            await series_usage.asave() 
+                    # Организация и выдача сериала пользователю 
+                    series_id = obj.id
                     text_msg_season = ''
                     keyboard_start = types.InlineKeyboardMarkup(row_width=2)
                     season_row = []
-                    for video_count in video_counts: 
-                        if await sync_to_async(lambda: Series.objects.get(id=video_count['series_id']).name)() == obj.name:
-                            text_msg_season += f"   ▪ Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
-                            season_row.append(types.InlineKeyboardButton(f'Сезон {video_count['season']}', callback_data=f'season_{obj.id}_{video_count['season']}_{video_count['num_videos']}'))
+                    # Формируем запрос для получения всех видео по series_id с уникальным season
+                    videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id) \
+                        .values('series_id') \
+                        .annotate(num_videos=Count('id')) \
+                        .values('series_id', 'season','num_videos')))()
+                    season_row = []
+                    for video_count in videos:
+                        season_row.append(types.InlineKeyboardButton(
+                            f'Сезон {video_count['season']}', 
+                            callback_data = f'season_{series_id}_{video_count['season']}_{video_count['num_videos']}'
+                            ))
+                        text_msg_season += f"   ▪ Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
+                    # Если всего один сезон то выдаем серии
                     if len(season_row) == 1:
-                        video = await sync_to_async(lambda: list(Video.objects.filter(series_id=obj.id)))()
+                        videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id)))()
                         keyboard_start = types.InlineKeyboardMarkup(row_width=4)
-                        keyboard_start.row(types.InlineKeyboardButton('Выберите нужну серию:', callback_data='None'))
+                        keyboard_start.row(types.InlineKeyboardButton('Выберите номер фильма для просмотра: ', callback_data='None'))
                         list_video = []
-                        for i in video:
-                            list_video.append(types.InlineKeyboardButton(str(i.number), callback_data=f'video_{str(i.series_id)}_{str(i.season)}_{str(i.number)}'))
+                        for i in videos:
+                            list_video.append(types.InlineKeyboardButton('Фильм №'+str(i.number), callback_data=f'video_{str(series_id)}_{str(i.season)}_{str(i.number)}'))
                         keyboard_start.add(*list_video)
                     else:
-                        button = types.InlineKeyboardButton("✨ Смотреть первую серию >", callback_data=f'start_watching-{obj.id}')
+                        button = types.InlineKeyboardButton("✨ Смотреть первую серию >", callback_data=f'start_watching-{series_id}')
                         keyboard_start.row(button)
                         keyboard_start.add(*season_row)
-                    keyboard_start.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{obj.id}'))
+                    keyboard_start.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{series_id}'))
 
                     
                     try:
