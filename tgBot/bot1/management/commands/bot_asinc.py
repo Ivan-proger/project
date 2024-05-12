@@ -116,7 +116,7 @@ async def all_items():
     all_series = cache.get('all_series')
     # Если данные в кэше отсутствуют, загрузить их из базы данных
     if all_series is None:
-        all_series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster', 'description')))()
+        all_series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True)))()
         cache.set('all_series', all_series, settings.CACHE_TTL)
     return all_series
 # Отправка картинки
@@ -161,15 +161,16 @@ async def search_mode(message):
 
 # Поиск сериала
 async def search_obj_series(query):
+    # Получаем кэш
+    series = await all_items()
     # Если запрос - это число, ищем по id
     if str(query).isdigit():
-        series = await sync_to_async(lambda: list(Series.objects.filter(id=int(query), is_release=True).all()))()
-        if series:
-            return series[0]
-    
+        for series_id in series:
+            if series_id.id == int(query):
+                return series_id
+
     # Иначе, используем fuzzywuzzy для поиска по имени
     query = str(query)
-    series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True)))()
     if series:
         # фильтруем по нашей схожести равной 50
         filtered_series = [item for item in series if fuzz.ratio(item.name, query) >= 50]
@@ -196,9 +197,10 @@ async def help(message):
 async def list_mode(message, start_index=0, end_index=45, all_series=None): 
     if not all_series: # Если мы не вызываем метод уже с готовым листом сериалов
         user = await update_activity(message.chat.id)# обновление последней активности
-        all_series = await sync_to_async(lambda: list(Series.objects.filter(is_release=True).defer('poster')[start_index:end_index]))()
-        reply_text = settings.LIST_MESSAGE
         await bot.delete_message(message.chat.id, message.id)
+        if user:
+            all_series = (await all_items())[start_index:end_index]
+            reply_text = settings.LIST_MESSAGE        
     else:
         reply_text = "🔥 Самое популярное 🔥 \r\n\r\n"
         user = True
@@ -267,17 +269,22 @@ class Command(BaseCommand):
                         await search_video(call.message, id_series=int(call.data.split('_')[1]), season=number_season, number=number_video)
                     if call.data.split('_')[0] == 'backSeries':
                         series_id = call.data.split('_')[1]
-                        videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id) \
-                            .values('series_id') \
-                            .annotate(num_videos=Count('id')) \
-                            .values('series_id', 'season','num_videos')))()
                         keyboard = types.InlineKeyboardMarkup(row_width=2)
-                        season_row = []
-                        for video_count in videos:
-                            season_row.append(types.InlineKeyboardButton(
-                                f'Сезон {video_count['season']}', 
-                                callback_data = f'season_{series_id}_{video_count['season']}_{video_count['num_videos']}'
-                                ))
+                        # Получаем кэш
+                        season_row = cache.get(f'season_row-{series_id}')
+                        if season_row is None:
+                            season_row = []
+                            videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id) \
+                                .values('series_id') \
+                                .annotate(num_videos=Count('id')) \
+                                .values('series_id', 'season','num_videos')))()
+
+                            for video_count in videos:
+                                season_row.append(types.InlineKeyboardButton(
+                                    f'Сезон {video_count['season']}', 
+                                    callback_data = f'season_{series_id}_{video_count['season']}_{video_count['num_videos']}'
+                                    ))
+                            cache.set(f'season_row-{series_id}', season_row, settings.CACHE_TTL)
                         keyboard.add(*season_row)
                         keyboard.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{series_id}'))
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)  
@@ -350,11 +357,24 @@ class Command(BaseCommand):
                     # Закрытие панельки
                     if call.data == 'cancel':
                         await bot.delete_message(call.message.chat.id, call.message.message_id)
+
                     # Чистим кэш
                     if call.data == 'cacheclear':
                         cache.clear()
                         await bot.answer_callback_query(callback_query_id=call.id, text='Кэш очищен🚮')
                         await bot.delete_message(call.message.chat.id, call.message.message_id)
+
+                    # Релиз сериалов
+                    if call.data == 'premiere':
+                        await bot.delete_message(call.message.chat.id, call.message.message_id)
+                        all_series = await sync_to_async(lambda: list(Series.objects.filter(is_release=False)))()
+                        text = '— — — — — — — — — — — — — —\r\n'
+                        for series in all_series:
+                            series.is_release = True
+                            await series.asave()
+                            text += f'✅Выпущен — <code>{series.name}</code>\r\n— — — — — — — — — — — — — —\r\n'
+                        await bot.send_message(call.message.chat.id, text, parse_mode='HTML')
+
                     # Закрытия сообщения и очистка статы
                     if call.data == 'cancelState':
                         await bot.delete_message(call.message.chat.id, call.message.message_id)
@@ -362,10 +382,10 @@ class Command(BaseCommand):
                     if call.data.split('-')[0] == 'add':
                         if await sync_to_async(lambda: list(Users.objects.filter(external_id=int(call.data.split('-')[1]), is_superuser=True).all()))():
                             await bot.delete_message(call.message.chat.id, call.message.message_id)
-                            await bot.send_message(call.message.chat.id, f'Введите клавиатуру так: \r\n<code>Название_кнопки - url </code>:', reply_markup=cancel_keyboard, parse_mode='HTML')
+                            await bot.send_message(call.message.chat.id, 
+                                f'Введите клавиатуру так: \r\n<code>Название_кнопки - url </code>:', 
+                                reply_markup=cancel_keyboard, parse_mode='HTML')
                             await bot.set_state(call.message.chat.id, MyStates.admin_keybord_add_set, call.message.chat.id)
-
-
 
                     # обнуления рекламной подписки для всех пользователей
                     if call.data == 'reset_is_subscription':
@@ -402,9 +422,11 @@ class Command(BaseCommand):
                         await bot.send_photo(call.message.chat.id, photo=buffer, caption="🔝Статистика уникального использования за 31 день🔝")
                         plt.close()
                         buffer.close()
+
+                    # Создаем файл с ID пользователей    
                     if call.data == 'fail_txt_bd':
                         await bot.delete_message(call.message.chat.id, call.message.id)
-                        # Создаем файл с ID пользователей 
+                        
                         async def write_file(users, filename):
                             async with aio_open(filename, 'w') as file:
                                 async for user in users:
@@ -426,6 +448,7 @@ class Command(BaseCommand):
                         else:
                             settings.CHANGE_DESIGN = True
                         await handle_admin_command(call.message, True)
+
                     # Технические работы включение
                     if call.data == 'tex_work':
                         await bot.delete_message(call.message.chat.id, call.message.id)
@@ -448,6 +471,7 @@ class Command(BaseCommand):
                         os.system(settings.APPEAL_PYTHON+" manage.py techBot")
                         # Завершение скрипта
                         sys.exit()
+                    # Изминение текстовых констат 
                     if call.data == 'text_const':
                         await bot.delete_message(call.message.chat.id, call.message.id)
                         keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -658,21 +682,28 @@ class Command(BaseCommand):
                             await series_usage.asave() 
                     # Организация и выдача сериала пользователю 
                     series_id = obj.id
-                    text_msg_season = ''
                     keyboard_start = types.InlineKeyboardMarkup(row_width=2)
-                    season_row = []
-                    # Формируем запрос для получения всех видео по series_id с уникальным season
-                    videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id) \
-                        .values('series_id') \
-                        .annotate(num_videos=Count('id')) \
-                        .values('series_id', 'season','num_videos')))()
-                    season_row = []
-                    for video_count in videos:
-                        season_row.append(types.InlineKeyboardButton(
-                            f'Сезон {video_count['season']}', 
-                            callback_data = f'season_{series_id}_{video_count['season']}_{video_count['num_videos']}'
-                            ))
-                        text_msg_season += f"   ▪ Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
+                    # Получаем кэш
+                    season_row = cache.get(f'season_row-{series_id}')
+                    text_msg_season = cache.get(f'text_msg_season-{series_id}')
+                    if season_row is None:
+                        text_msg_season = ''
+                        season_row = []
+                        # Формируем запрос для получения всех видео по series_id с уникальным season
+                        videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id) \
+                            .values('series_id') \
+                            .annotate(num_videos=Count('id')) \
+                            .values('series_id', 'season','num_videos')))()
+                        season_row = []
+                        for video_count in videos:
+                            season_row.append(types.InlineKeyboardButton(
+                                f'Сезон {video_count['season']}', 
+                                callback_data = f'season_{series_id}_{video_count['season']}_{video_count['num_videos']}'
+                                ))
+                            text_msg_season += f"   ▪ Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
+                        # Формируем кэш если нету 
+                        cache.set(f'season_row-{series_id}', season_row, settings.CACHE_TTL)
+                        cache.set(f'text_msg_season-{series_id}', text_msg_season, settings.CACHE_TTL)
                     # Если всего один сезон то выдаем серии
                     if len(season_row) == 1:
                         videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id)))()
@@ -751,9 +782,10 @@ class Command(BaseCommand):
                 button6 = types.InlineKeyboardButton("🧑‍💻Включить режим тех. работ", callback_data=f'tex_work')
                 button7 = types.InlineKeyboardButton("👾Изменения текстовых констант", callback_data=f'text_const')
                 button8 = types.InlineKeyboardButton("🤖Количество запросов в сек. для юзеров", callback_data=f'MESSAGES_PER_SECOND')
-                button9 = types.InlineKeyboardButton("🗑Очистить кэш", callback_data=f'cacheclear')
+                button9 = types.InlineKeyboardButton("👁️Релиз контента", callback_data=f'premiere')
+                button10 = types.InlineKeyboardButton("🗑Очистить кэш", callback_data=f'cacheclear')
                 buttonx = types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel')
-                keyboard.add(button, button1, button2, button3, button4, button5, button6, button7, button8,button9,buttonx)     
+                keyboard.add(button, button1, button2, button3, button4, button5, button6, button7, button8, button9, button10,buttonx)     
                 await bot.send_message(message.chat.id, '💌💌💌--Админ панель--💌💌💌', reply_markup=keyboard)
             else:
                 await bot.send_message(message.from_user.id, f'За покупкой рекламы > {settings.CONTACT_TS}', reply_markup=main_keyboard, parse_mode='HTML')
