@@ -2,7 +2,6 @@ import os
 import sys
 import requests
 import asyncio #база для асинхроной работы бота
-import logging #дебаг режим
 import telebot #база бота нашего
 import matplotlib.pyplot as plt #пострение графика активности
 import io #для работы с байтами 
@@ -26,6 +25,7 @@ from telebot.asyncio_handler_backends import State, StatesGroup # состоян
 
 # включение/выключение дебага в settings.py
 if settings.DEBUG:
+    import logging #дебаг режим
     logger = telebot.logger
     telebot.logger.setLevel(logging.DEBUG)  # Outputs debug messages to console.
     class MyExceptionHandler(ExceptionHandler):
@@ -220,11 +220,14 @@ async def list_mode(message, start_index=0, end_index=45, all_series=None):
         count = await sync_to_async(Series.objects.count)()
 
         if count > end_index:
-            await bot.send_message(message.chat.id, f'{reply_text} {final_string} \r\n│\r\n└Показано  {end_index}/{count}', reply_markup=keyboard_next_video_list, parse_mode='HTML')
+            await bot.send_message(message.chat.id, 
+                f'{reply_text} {final_string} \r\n│\r\n└Показано  {end_index}/{count}', 
+                reply_markup=keyboard_next_video_list, parse_mode='HTML'
+                )
         else:
             await bot.send_message(message.chat.id, reply_text + final_string, parse_mode='HTML')
     else:
-        await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+        await bot.send_message(message.chat.id, settings.BAN_NESSAGE, reply_markup=main_keyboard, parse_mode='html')
 
 class Command(BaseCommand):
     help = 'Async Telegram bot.'       
@@ -232,7 +235,7 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         print("\n--- Bot runing ---\n")
 
-
+        # Воздух свежи перед: GOVNOCODE = ON
 
         # обработчик инлайн клавиатуры
         @bot.callback_query_handler(func=lambda call: True)
@@ -286,7 +289,10 @@ class Command(BaseCommand):
                                     ))
                             cache.set(f'season_row-{series_id}', season_row, settings.CACHE_TTL)
                         keyboard.add(*season_row)
-                        keyboard.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{series_id}'))
+                        keyboard.row(types.InlineKeyboardButton(
+                            '📢 Поделится', 
+                            url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{series_id}')
+                            )
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)  
                         
                     # Популярное                                         
@@ -343,16 +349,28 @@ class Command(BaseCommand):
                                         inline_keyboard.keyboard[0].pop(0)  # Удаляем первую кнопку
                                         # Редактируем сообщение с обновленной инлайн клавиатурой
                                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=inline_keyboard)
-                                try:
-                                    video = await sync_to_async(lambda: Video.objects.get(id=call.data.split('-')[1]))()
-                                    if await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season, number=video.number+1).all()))():
-                                        await search_video(call.message, id_series=video.series_id, season=video.season, number=video.number+1)
-                                    elif await sync_to_async(lambda: list(Video.objects.filter(series_id=video.series_id, season=video.season+1, number=1).all()))():
-                                        await search_video(call.message, id_series=video.series_id, season=video.season+1, number=1)
-                                    else:
-                                        await bot.send_message(call.message.chat.id,'Это было последнее видеo😢', reply_markup=main_keyboard)
-                                except:
-                                    await bot.send_message(call.message.chat.id,'Произошла ошибка🤬', reply_markup=main_keyboard)
+                                # Назначаем
+                                season = call.data.split('-')[2]
+                                series_id = call.data.split('-')[1]
+                                number = call.data.split('-')[3]
+                                # Устанавливаем кэш
+                                list_season = cache.get(f'season-{season}-{series_id}')
+                                if not list_season:
+                                    list_season = await sync_to_async(lambda: list(Video.objects.filter(season=season, series_id=series_id)))()
+                                    cache.set(f'season-{season}-{series_id}', list_season, settings.CACHE_TTL)
+                                else:
+                                    obj_video = None
+                                    # Проще перебрать чем что то еще 
+                                    for video in list_season:
+                                        # Сверяем что в куче кэша етсь то что нам надо (а точнее видео на номер выше)
+                                        if str(video.season) == str(season) and str(video.number) == str(int(number)+1):
+                                            obj_video = video
+                                            await search_video(call.message, obj_video=obj_video)
+                                            break
+                                    # Ну если нет такого то делаем запрос на первую серию следующего сезона
+                                    if not obj_video:
+                                        await search_video(call.message, id_series=series_id, season=int(season)+1, number=1)
+
 
                     # Закрытие панельки
                     if call.data == 'cancel':
@@ -456,7 +474,12 @@ class Command(BaseCommand):
                         buttonx = types.InlineKeyboardButton(" нет ❌ ", callback_data='cancel')
                         buttonY = types.InlineKeyboardButton(" да, точно ✅", callback_data='tex_working')
                         keyboard.add(buttonY, buttonx)                
-                        await bot.send_message(call.message.chat.id, "🆘 Вы точно уверенны???\r\n<b>Это может привести к выключению бота</b>", reply_markup=keyboard, parse_mode='HTML')
+                        await bot.send_message(
+                            call.message.chat.id,
+                            "🆘 Вы точно уверенны???\r\n<b>Это может привести к выключению бота</b>",
+                            reply_markup=keyboard,
+                            parse_mode='HTML'
+                        )
                     if call.data == 'tex_working':
                         await bot.delete_message(call.message.chat.id, call.message.id)
                         list_admins = await sync_to_async((lambda: list(Users.objects.filter(is_superuser=True))))()
@@ -466,7 +489,11 @@ class Command(BaseCommand):
                                 f.write(str(admin.external_id))
                                 list_admins_text.append(f'\r\n- @{str(admin.name)}')
                         text = ''.join(*list_admins_text)
-                        await bot.send_message(call.message.chat.id, f"<b>Включён режим технических работ!\r\nАдмины для разморозки тех работ:{text} \r\n#техработы</b>", parse_mode='HTML')        
+                        await bot.send_message(
+                            call.message.chat.id,
+                            f"<b>Включён режим технических работ!\r\nАдмины для разморозки тех работ:{text} \r\n#техработы</b>",
+                            parse_mode='HTML'
+                            )        
                         # Запуск другой команды
                         os.system(settings.APPEAL_PYTHON+" manage.py techBot")
                         # Завершение скрипта
@@ -482,7 +509,12 @@ class Command(BaseCommand):
                         for key, value in variables_list.items():
                             keyboard.add(types.InlineKeyboardButton(value, callback_data=f'const-{key}'))
                         keyboard.add(types.InlineKeyboardButton(" -- Закрыть ❌ -- ", callback_data='cancel'))
-                        await bot.send_message(call.message.chat.id, "|<b> Будьте крайне осторожны изменяя эти параметры! </b>|", reply_markup=keyboard, parse_mode='HTML')
+                        await bot.send_message(
+                            call.message.chat.id,
+                            "|<b> Будьте крайне осторожны изменяя эти параметры! </b>|",
+                            reply_markup=keyboard,
+                            parse_mode='HTML'
+                            )
                     if call.data.startswith("const"):
                         key = call.data.split('-')[1]
                         keyboard = types.InlineKeyboardMarkup()
@@ -491,7 +523,12 @@ class Command(BaseCommand):
                         buttonY = types.InlineKeyboardButton(" да, точно ✅", callback_data=f'change-{key}')
                         keyboard.add(buttontext) 
                         keyboard.row(buttonY, buttonx)                    
-                        await bot.send_message(call.message.chat.id, f"Данные переменной <code>{key.split('.')[1]}</code>: \r\n{str(eval(key))}",reply_markup=keyboard, parse_mode='HTML')
+                        await bot.send_message(
+                            call.message.chat.id,
+                            f"Данные переменной <code>{key.split('.')[1]}</code>: \r\n{str(eval(key))}",
+                            reply_markup=keyboard,
+                            parse_mode='HTML'
+                            )
                     if call.data.split('-')[0] == 'change':
                         keyboard = types.InlineKeyboardMarkup(row_width=2)
                         keyboard.add(types.InlineKeyboardButton(f"Нажмите чтобы отменить❌", callback_data='cancelState'))
@@ -510,8 +547,12 @@ class Command(BaseCommand):
                         keyborad.row(button0) 
                         keyborad.row(buttonMinus, buttonPlus)
                         keyborad.row(buttonx)
-                        await bot.send_message(call.message.chat.id, 
-                        'Изменить допустимое число сообщений которые может отправить пользователь в секунду боту (при перезагрузке бота вернеться к сток занчению) применять при ддос атаках на бота', reply_markup=keyborad)
+                        await bot.send_message(call.message.chat.id,
+                        ''' 
+                        'Изменить допустимое число сообщений которые может отправить пользователь в секунду боту 
+                        (при перезагрузке бота вернеться к сток занчению) применять при ддос атаках на бота'
+                        ''', 
+                        reply_markup=keyborad)
                     if call.data == 'PLUS':
                         settings.MESSAGES_PER_SECOND += 1
                         count = settings.MESSAGES_PER_SECOND
@@ -537,12 +578,11 @@ class Command(BaseCommand):
                         keyborad.row(buttonx)
                         await bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyborad)                                                
                 else:
-                    await bot.send_message(call.message.chat.id, 
-                        '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', 
-                        reply_markup=main_keyboard, parse_mode='html')
+                    await bot.send_message(call.message.chat.id, settings.BAN_NESSAGE, reply_markup=main_keyboard, parse_mode='html')
             except Exception as e:
                 if settings.DEBUG:
-                    logger.error(f'\n\n{str(e)}\n\n')
+                    import traceback #дебаг
+                    logger.error(f'\n\n{traceback.format_exc()}\n\n')
                 else:
                     await bot.send_message(call.message.chat.id, f'😨 Произошла ошибка! введите <code>/start</code>', parse_mode='HTML')
                     
@@ -662,8 +702,7 @@ class Command(BaseCommand):
                 if not obj:
                     obj = await search_obj_series(message.text)
                     if obj:
-                        await bot.send_message(message.chat.id, f'🪄Вот что удалось найти! Вы можете еще раз задать новый поисковой запрос, если вы искали что-то другое или ввести `{settings.CANCEL_MESSAGE}` для отмены поиска.', 
-                                               parse_mode='html')
+                        await bot.send_message(message.chat.id, settings.SEARCH_MESSAGE, parse_mode='html')
                 if obj:                      
                     # Если наш юзер еще не смотрел этот сериал то ставим на просмотрено
                     series_user = await sync_to_async(lambda: list(user.series.all()))()
@@ -687,82 +726,103 @@ class Command(BaseCommand):
                     season_row = cache.get(f'season_row-{series_id}')
                     text_msg_season = cache.get(f'text_msg_season-{series_id}')
                     if season_row is None:
-                        text_msg_season = ''
-                        season_row = []
                         # Формируем запрос для получения всех видео по series_id с уникальным season
                         videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id) \
                             .values('series_id') \
                             .annotate(num_videos=Count('id')) \
                             .values('series_id', 'season','num_videos')))()
+                        text_msg_season = ''
                         season_row = []
-                        for video_count in videos:
-                            season_row.append(types.InlineKeyboardButton(
-                                f'Сезон {video_count['season']}', 
-                                callback_data = f'season_{series_id}_{video_count['season']}_{video_count['num_videos']}'
-                                ))
-                            text_msg_season += f"   ▪ Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
-                        # Формируем кэш если нету 
+                        # Если всего один сезон то выдаем серии
+                        if len(videos) == 1:
+                            videos2 = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id)))()
+                            for i in videos2:
+                                season_row.append(types.InlineKeyboardButton('Фильм №'+str(i.number), callback_data=f'video_{str(series_id)}_{str(i.season)}_{str(i.number)}'))  
+                            text_msg_season += f"   ▪ Cезон {videos[0]['season']}: серий {videos[0]['num_videos']}\r\n"                      
+                        else:
+                            for video_count in videos:
+                                season_row.append(
+                                    types.InlineKeyboardButton(
+                                    f'Сезон {video_count['season']}', 
+                                    callback_data = f'season_{series_id}_{video_count['season']}_{video_count['num_videos']}'
+                                    ))                                
+                                text_msg_season += f"   ▪ Cезон {video_count['season']}: серий {video_count['num_videos']}\r\n"
+                        # Формируем кэш 
+                        print(f'\n\n{season_row}\n\n') 
                         cache.set(f'season_row-{series_id}', season_row, settings.CACHE_TTL)
                         cache.set(f'text_msg_season-{series_id}', text_msg_season, settings.CACHE_TTL)
-                    # Если всего один сезон то выдаем серии
-                    if len(season_row) == 1:
-                        videos = await sync_to_async(lambda: list(Video.objects.filter(series_id=series_id)))()
-                        keyboard_start = types.InlineKeyboardMarkup(row_width=4)
-                        keyboard_start.row(types.InlineKeyboardButton('Выберите номер фильма для просмотра: ', callback_data='None'))
-                        list_video = []
-                        for i in videos:
-                            list_video.append(types.InlineKeyboardButton('Фильм №'+str(i.number), callback_data=f'video_{str(series_id)}_{str(i.season)}_{str(i.number)}'))
-                        keyboard_start.add(*list_video)
-                    else:
-                        button = types.InlineKeyboardButton("✨ Смотреть первую серию >", callback_data=f'start_watching-{series_id}')
-                        keyboard_start.row(button)
-                        keyboard_start.add(*season_row)
+                    
+                    button = types.InlineKeyboardButton("✨ Смотреть первую серию >", callback_data=f'start_watching-{series_id}')
+                    keyboard_start.row(button)
+                    keyboard_start.add(*season_row)
                     keyboard_start.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{series_id}'))
 
                     
                     try:
-                        await bot.send_photo(message.chat.id, obj.poster,
-                                    caption= str(f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n\r\n{text_msg_season}"), reply_markup=keyboard_start, parse_mode='HTML')
+                        await bot.send_photo(
+                            message.chat.id, 
+                            obj.poster,
+                            caption= str(f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n\r\n{text_msg_season}"),
+                            reply_markup=keyboard_start,
+                            parse_mode='HTML'
+                            )
                     except:
-                        await bot.send_message(message.chat.id, f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n{text_msg_season}", reply_markup=keyboard_start, parse_mode='HTML')
+                        await bot.send_message(
+                            message.chat.id,
+                            f"⚡️ <b>{obj.name}</b>\r\n<i>{obj.description}</i>\r\n{text_msg_season}",
+                            reply_markup=keyboard_start,
+                            parse_mode='HTML'
+                            )
                         
                 else:
                     await bot.send_message(message.chat.id, settings.ERROR_VIDEO)  
             else:
                 await bot.delete_state(message.chat.id, message.chat.id)
-                await bot.send_message(message.chat.id, 
-                '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+                await bot.send_message(message.chat.id, settings.BAN_NESSAGE, reply_markup=main_keyboard, parse_mode='html')
 
         # Поиск видо как после сериала так и как отдельный метод для вызова где угодно
-        async def search_video(message, id_series, season=None, number=None):
+        async def search_video(message, id_series=None, season=None, number=None, obj_video=None):
             if await update_activity(message.chat.id): # обновление последней активности 
-                if not season and not number:
-                    list_text = message.text.split()
-                    if len(list_text) == 2:
-                        season = list_text[0]
-                        number = list_text[1]
-                    else:
-                        await bot.send_message(message.chat.id, settings.ERROR_VIDEO)
-                        return
                 try:
-                    obj_video = await sync_to_async(lambda: Video.objects.get(series_id=id_series,season=season,number=number))()
+                    if not obj_video:
+                        # КЭШ КЭШ КЭШ
+                        list_season = cache.get(f'season-{season}-{id_series}')
+                        if not list_season:
+                            list_season = await sync_to_async(lambda: list(Video.objects.filter(season=season, series_id=id_series)))()
+                            cache.set(f'season-{season}-{id_series}', list_season, settings.CACHE_TTL)
+                            obj_video = await sync_to_async(lambda: Video.objects.get(series_id=id_series,season=season,number=number))()  
+                        else:
+                            # Проще перебрать чем что то еще 
+                            for video in list_season:
+                                if str(video.season) == str(season) and str(video.number) == str(number):
+                                    obj_video = video
+                                    break
 
                     keyboard_next_video = types.InlineKeyboardMarkup()
-                    button = types.InlineKeyboardButton("Следующая серия ▶️", callback_data=f'next_video-{obj_video.id}')
+                    button = types.InlineKeyboardButton("Следующая серия ▶️", callback_data=f'next_video-{obj_video.series_id}-{obj_video.season}-{obj_video.number}')
                     keyboard_next_video.row(button)
-                    button_share = types.InlineKeyboardButton("📢 Поделится", 
-                        url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start={id_series}_{obj_video.season}_{obj_video.number}') #создание ссылки поделится
+                    # Создание ссылки поделится
+                    button_share = types.InlineKeyboardButton(
+                        "📢 Поделится", 
+                        url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start={obj_video.series_id}_{obj_video.season}_{obj_video.number}'
+                        ) 
                     keyboard_next_video.row(button_share)
 
-                    await bot.send_video(message.chat.id, obj_video.video_id,reply_markup=keyboard_next_video ,
-                                    caption=f'📺 <b>{obj_video.name}</b> \r\n  Сезон {obj_video.season}, cерия №{obj_video.number}', supports_streaming=True, parse_mode="html")
+                    await bot.send_video(
+                        message.chat.id, 
+                        obj_video.video_id,
+                        reply_markup=keyboard_next_video ,
+                        caption=f'📺 <b>{obj_video.name}</b> \r\n  Сезон {obj_video.season}, cерия №{obj_video.number}', 
+                        supports_streaming=True, 
+                        parse_mode="html"
+                        )
                     await bot.send_message(message.chat.id, settings.ENJOY_WATCHING , reply_markup=main_keyboard)
                     await bot.delete_state(message.chat.id, message.chat.id)
                 except:
-                    await bot.send_message(message.chat.id, settings.ERROR_VIDEO)
+                    await bot.send_message(message.chat.id, 'Возможно такой серии не существует😢')
             else:
                 await bot.delete_state(message.chat.id, message.chat.id)
-                await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+                await bot.send_message(message.chat.id, settings.BAN_NESSAGE, reply_markup=main_keyboard, parse_mode='html')
 
 
         # Админ команды
@@ -810,7 +870,10 @@ class Command(BaseCommand):
                             keyboard.add(types.InlineKeyboardButton(text=button_name, url=button_url))
                     
                         print(button_url.strip())
-                    await bot.send_message(message.chat.id, 'Введите текст(вы можете добавить фото или видео) рекламы(Для использования отдельных шрифтов используйте HTML разметку телеграмма): ')
+                    await bot.send_message(
+                        message.chat.id, 
+                        'Введите текст(вы можете добавить фото или видео) рекламы(Для использования отдельных шрифтов используйте HTML разметку телеграмма): '
+                        )
                     async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
                         data['admin_keyboard_add'] = keyboard
                     await bot.set_state(message.from_user.id, MyStates.admin_text_add, message.chat.id)
@@ -914,7 +977,11 @@ class Command(BaseCommand):
                             number = number, # номер серии
                             name =  message_text_list[1],  # вторая строчка это название серии
                         ))()
-                        await bot.send_message(message.chat.id, f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code> \r\nCерия №{video.number}, сезон {video.season}\r\n #{s.name}', parse_mode='HTML')
+                        await bot.send_message(
+                            message.chat.id, 
+                            f'Видео успешно добавлено! \r\n{video.name}, к сериалу: <code>{s.name}</code> \r\nCерия №{video.number}, сезон {video.season}\r\n #{s.name}', 
+                            parse_mode='HTML'
+                            )
                         cache.delete('all_series') # Удаляем кэш
 
                 # Если мы отвечаем на сообщение чтобы сразу все подвязать в базу
@@ -962,9 +1029,17 @@ class Command(BaseCommand):
                             s.poster = str(id_photo)
                             s.description = message_text_list[1]
                             await s.asave()
-                            await bot.send_message(message.chat.id, f'Успешно изменён сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description} \r\n#{s.name}', parse_mode='HTML')
+                            await bot.send_message(
+                                message.chat.id, 
+                                f'Успешно изменён сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description} \r\n#{s.name}', 
+                                parse_mode='HTML'
+                                )
                         else:
-                            await bot.send_message(message.chat.id, f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}\r\n#{s.name}', parse_mode='HTML')
+                            await bot.send_message(
+                                message.chat.id, 
+                                f'Успешно добавлен сериал \r\nимя: <code>{s.name}</code> \r\nОписание: {s.description}\r\n#{s.name}', 
+                                parse_mode='HTML'
+                                )
                         cache.delete('all_series') # Удаляем кэш
                     else:
                         await bot.send_message(message.chat.id, f'Фото не было никуда добавлено, перепроверьте введенные данные')
@@ -981,7 +1056,7 @@ class Command(BaseCommand):
                             await globals()[callback](message)
                             return
             else:
-                await bot.send_message(message.chat.id, '⛔Вам ограничили доступ за слишком частые запросы к боту\r\n <b>Попробуйте через пару минут еще раз</b> ', reply_markup=main_keyboard, parse_mode='html')
+                await bot.send_message(message.chat.id, settings.BAN_NESSAGE, reply_markup=main_keyboard, parse_mode='html')
             #except:
                 #await bot.send_message(message.chat.id, f'😨 Произошла ошибка! введите <code>/start</code>', parse_mode='HTML')
 
