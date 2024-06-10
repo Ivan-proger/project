@@ -131,22 +131,28 @@ async def send_page(message):
     await send_page1(msg)
 # Функция для отправки сообщения с клавиатурой
 async def send_page1(message, current_page=1):
-    # Определяем индексы элементов текущей страницы
-    items = await all_items()
-    start_index = (current_page - 1) * settings.ITEMS_PER_PAGE
-    end_index = min(start_index + settings.ITEMS_PER_PAGE, len(items))
-    
-    # Создаем клавиатуру
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
-    for item in items[start_index:end_index]:
-        # Добавляем кнопку для каждого элемента на текущей странице
-        keyboard.add(types.InlineKeyboardButton(text=f"{item.name}", callback_data=f"series_{item.id}"))
-    
-    # Добавляем кнопки для навигации по страницам
-    prev_button = types.InlineKeyboardButton(text="◀️Назад", callback_data=f"prevpage_{current_page}")
-    next_button = types.InlineKeyboardButton(text="Вперед▶️", callback_data=f"nextpage_{current_page}")
-    page_info = types.InlineKeyboardButton(text=f"{current_page}/{await get_total_pages(len(items))}", callback_data="page_info")
-    keyboard.row(prev_button, page_info, next_button)
+    # Кэшируем чтобы не думать!
+    keyboard = cache.get(f'send_page-{current_page}')
+    if keyboard is None:
+        # Определяем индексы элементов текущей страницы
+        items = await all_items()
+        start_index = (current_page - 1) * settings.ITEMS_PER_PAGE
+        end_index = min(start_index + settings.ITEMS_PER_PAGE, len(items))
+        
+        # Создаем клавиатуру
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        for item in items[start_index:end_index]:
+            # Добавляем кнопку для каждого элемента на текущей странице
+            keyboard.add(types.InlineKeyboardButton(text=f"{item.name}", callback_data=f"series_{item.id}"))
+        
+        # Добавляем кнопки для навигации по страницам
+        prev_button = types.InlineKeyboardButton(text="◀️Назад", callback_data=f"prevpage_{current_page}")
+        next_button = types.InlineKeyboardButton(text="Вперед▶️", callback_data=f"nextpage_{current_page}")
+        page_info = types.InlineKeyboardButton(text=f"{current_page}/{await get_total_pages(len(items))}", callback_data="page_info")
+        keyboard.row(prev_button, page_info, next_button)
+        # Создаем кэш
+        cache.set(f'send_page-{current_page}', keyboard, settings.CACHE_TTL)
+        
     # Отправляем сообщение с клавиатурой и информацией о текущей странице
     await bot.edit_message_reply_markup(chat_id=message.chat.id, message_id=message.message_id, reply_markup=keyboard)
 # Функция для вычисления общего количества страниц
@@ -298,8 +304,24 @@ class Command(BaseCommand):
                     # Популярное                                         
                     if call.data == 'hot_series':
                         current_date = timezone.now().replace(day=1)
-                        series_ids = await sync_to_async(lambda: list(SeriesUsage.objects.filter(date=current_date).order_by('-count')[:5].values_list('series_id', flat=True)))()           
-                        list_series = await sync_to_async(lambda: list(Series.objects.filter(id__in=series_ids)))()
+                        # Кэш
+                        list_series = cache.get('hot_series')
+                        # Если данные в кэше отсутствуют, загрузить их из базы данных
+                        if list_series is None:
+                            # Делаем запрос на самые популярные id сериалов
+                            series_ids = await sync_to_async(
+                                lambda: list(
+                                    SeriesUsage.objects.filter(date=current_date)\
+                                        .order_by('-count')[:5]\
+                                            .values_list('series_id',
+                                                          flat=True
+                                                        )
+                                )
+                            )()      
+                            # Передаем список популярных сериалов в саму модель сериалов      
+                            list_series = await sync_to_async(lambda: list(Series.objects.filter(id__in=series_ids)))()
+                            cache.set('hot_series', list_series, 60*30) # На 30 минут кэш
+                        # Выводим пользователю список 
                         await list_mode(call.message, all_series=list_series)
 
                     # Обрабатываем нажатие на кнопку "Назад"
@@ -602,6 +624,7 @@ class Command(BaseCommand):
             await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
             await bot.send_message(message.chat.id, settings.COMMAND_HELP)
 
+        # Ответ на команду /start а также все что с ней связано (рефералка и выдача по реф системе)
         @bot.message_handler(commands=['start'])
         async def start(message):
             user, created = await sync_to_async(Users.objects.get_or_create)(
@@ -713,7 +736,7 @@ class Command(BaseCommand):
                             # Получение записи по текущей дате
                             series_usage = await sync_to_async(lambda: SeriesUsage.objects.get(series=obj,date=current_date))()
                         except SeriesUsage.DoesNotExist:
-                            # Если записи нет, создаем новую и устанавливаем счетчик на 1
+                            # Если записи нет, создаем новую и устанавливаем счетчик на 0
                             series_usage = SeriesUsage(series=obj, date=current_date, count=0)
                         finally:
                             # Если запись уже существует, увеличиваем счетчик на 1

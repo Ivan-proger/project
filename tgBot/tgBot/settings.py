@@ -103,7 +103,7 @@ CACHES = {
         'LOCATION': 'unique-snowflake',
     }
 }
-CACHE_TTL = 60 * 60 * 12  # Время жизни кэша 12 часов
+CACHE_TTL = 60 * 60 * 5  # Время жизни кэша 5 часов
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
