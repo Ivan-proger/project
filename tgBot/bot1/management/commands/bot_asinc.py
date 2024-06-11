@@ -56,9 +56,7 @@ main_keyboard.add(*main_board)
 cancel_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
 cancel_keyboard.add(types.KeyboardButton(settings.CANCEL_MESSAGE)) 
 
-keyboard_next_video_list = types.InlineKeyboardMarkup()
-button = types.InlineKeyboardButton("Следующая страница ▶️", callback_data='next_list')
-keyboard_next_video_list.row(button)
+
 
 # обновление последней активности
 async def update_activity(external_id, need_user=False):
@@ -200,32 +198,63 @@ async def help(message):
     await bot.send_message(message.chat.id, settings.COMMAND_HELP)   
     await bot.delete_state(message.from_user.id, message.chat.id)
 
-async def list_mode(message, start_index=0, end_index=45, all_series=None): 
+async def list_mode(message, start_index=0, end_index=36, user=None, all_series=None): 
     if not all_series: # Если мы не вызываем метод уже с готовым листом сериалов
-        user = await update_activity(message.chat.id)# обновление последней активности
-        await bot.delete_message(message.chat.id, message.id)
+        if not user:
+            user = await update_activity(message.chat.id)# обновление последней активности
         if user:
+            # Получаем все сериалы из метода по определенному ренджу
             all_series = (await all_items())[start_index:end_index]
-            reply_text = settings.LIST_MESSAGE        
+            if start_index == 0:
+                reply_text = settings.LIST_MESSAGE
+            # Чтобы без лишних слов сразу все выдало 
+            else:
+                reply_text = ''        
     else:
         reply_text = "🔥 Самое популярное 🔥 \r\n\r\n"
         user = True
     # Проверка на бан юзера   
     if user:
-        async def generate_string(series, bot):
-            if len(series.description.split()) <= 1:
-                return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂'
-            elif len(series.description) < 75:
-                return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ —  <i>{series.description}</i>'
-            else:
-                return f'  ▸<a href="t.me/{(await bot.get_me()).username}?start=Serias_{series.id}"> {series.name}</a> ◂ — <i>{series.description[:75]}...</i>'
-        data_strings = await asyncio.gather(*[generate_string(series, bot) for series in all_series])
+        async def generate_string(all_series, username):
+            final_string = ''
+            for series in all_series:
+                # Создаем собственно текст и ссылки для пользователей
+                if len(series.description.split()) <= 1:
+                    final_string += f'  ▸<a href="t.me/{username}?start=Serias_{series.id}"> {series.name}</a> ◂'
+                elif len(series.description) < 75:
+                    final_string += f'  ▸<a href="t.me/{username}?start=Serias_{series.id}"> {series.name}</a> ◂ —  <i>{series.description}</i>'
+                else:
+                    final_string += f'  ▸<a href="t.me/{username}?start=Serias_{series.id}"> {series.name}</a> ◂ — <i>{series.description[:75]}...</i>'
+                final_string += "\r\n➖➖➖➖➖➖➖➖➖➖➖➖➖➖\r\n"
+            return final_string
 
-        final_string = "\r\n➖➖➖➖➖➖➖➖➖➖➖➖➖➖\r\n".join(data_strings)
-
-        count = await sync_to_async(Series.objects.count)()
+        # Проверяем кэш есть ли уже такая страница там:
+        if reply_text != "🔥 Самое популярное 🔥 \r\n\r\n":
+            final_string = cache.get(f'final_string-{end_index}')
+            if final_string is None:
+                final_string = await generate_string(all_series, (await bot.get_me()).username)
+                cache.set(f'final_string-{end_index}', final_string, settings.CACHE_TTL)
+        else:
+            final_string = cache.get(f'final_string-hot')
+            if final_string is None:
+                final_string = await generate_string(all_series, (await bot.get_me()).username)
+                cache.set(f'final_string-hot', final_string, settings.CACHE_TTL)
+            await bot.send_message(message.chat.id, reply_text + final_string, parse_mode='HTML')
+            # Выходим если мы просто хотели список популярного
+            return None
+        
+        # Считаем количество сериалов
+        count = cache.get('Series.count')
+        if count is None:
+            count = await sync_to_async(Series.objects.count)()
+            # Устанавливаем кэш если его нету
+            cache.set('Series.count', count, settings.CACHE_TTL)
 
         if count > end_index:
+            keyboard_next_video_list = types.InlineKeyboardMarkup()
+            button = types.InlineKeyboardButton("Следующая страница ▶️", callback_data='next_list')
+            keyboard_next_video_list.row(button)
+            # Отправляем если есть еще невыведенные сериалы
             await bot.send_message(message.chat.id, 
                 f'{reply_text} {final_string} \r\n│\r\n└Показано  {end_index}/{count}', 
                 reply_markup=keyboard_next_video_list, parse_mode='HTML'
@@ -254,7 +283,8 @@ class Command(BaseCommand):
                         list1 = call.message.text.split('/')
                         list1 = list1[0].split()
                         start = list1[len(list1)-1]
-                        await list_mode(call.message, int(start), int(start)+25)
+                        # Отправляем следующий список
+                        await list_mode(call.message, int(start), int(start)+25, user)
 
                     if call.data.split('-')[0] == 'start_watching': # Первая серия под сериалом
                         await bot.delete_state(call.message.chat.id, call.message.chat.id)
@@ -780,7 +810,6 @@ class Command(BaseCommand):
                     keyboard_start.add(*season_row)
                     keyboard_start.row(types.InlineKeyboardButton('📢 Поделится', url=f'https://t.me/share/url?url=t.me/{(await bot.get_me()).username}?start=Serias_{series_id}'))
 
-                    
                     try:
                         await bot.send_photo(
                             message.chat.id, 
