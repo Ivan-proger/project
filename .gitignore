@@ -9,3 +9,4 @@ webhook_cert.pem
 webhook_pkey.pem
 StartMessageID
 ListMessageID
+.sql

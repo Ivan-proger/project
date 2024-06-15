@@ -66,8 +66,8 @@ class Users(models.Model):
 #конкретно все видео в боте    
 class Video(models.Model):
     series = models.ForeignKey(Series, on_delete = models.CASCADE, verbose_name='Какому сериалу принадлежит')
-    season = models.IntegerField(verbose_name='Номер сезона')
-    number = models.IntegerField(verbose_name='Номер серии')
+    season = models.PositiveIntegerField(verbose_name='Номер сезона')
+    number = models.PositiveIntegerField(verbose_name='Номер серии')
     video_id = models.CharField(max_length=64, verbose_name='ID видео файла из тг')
     name = models.CharField(max_length=40)
 
@@ -84,7 +84,7 @@ class Channel(models.Model):
     is_super_channel = models.BooleanField(default=False, verbose_name='Является ли канал супер важным для постинга сериалов')
     id_advertising = models.BooleanField(default=False, verbose_name='Канал для рекламы')
     name_channel = models.TextField(max_length=64, blank=True, null=True, default="channel")
-    subscribers_added = models.IntegerField(verbose_name="Пришло подписчиков", default=0)
+    subscribers_added = models.PositiveIntegerField(verbose_name="Пришло подписчиков", default=0)
 
     class Meta:
         verbose_name = 'Каналы'
@@ -100,7 +100,7 @@ class Channel(models.Model):
 # Статистика сервиса
 class ServiceUsage(models.Model):
     date = models.DateField(unique=True)
-    count = models.IntegerField(default=0)
+    count = models.PositiveIntegerField(default=0)
     
     class Meta:
         verbose_name = 'Статистика активности'
@@ -112,7 +112,7 @@ class ServiceUsage(models.Model):
 # Статистика рефералок
 class StatisticRef(models.Model):
     name_code = models.CharField(max_length=20, verbose_name="Код рефералки")
-    user_sdded = models.IntegerField(verbose_name="Пришло юзеров", default=0)
+    user_sdded = models.PositiveIntegerField(verbose_name="Пришло юзеров", default=0)
 
     class Meta:
         verbose_name = 'Статистика рефералок'
@@ -125,7 +125,7 @@ class StatisticRef(models.Model):
 class SeriesUsage(models.Model):
     series = models.ForeignKey(Series, on_delete = models.CASCADE, verbose_name='Для: ')
     date = models.DateField()
-    count = models.IntegerField(default=0)
+    count = models.PositiveIntegerField(default=0)
     
     class Meta:
         verbose_name = 'Статистика сериала'

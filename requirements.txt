@@ -17,3 +17,5 @@ python-dotenv
 paramiko
 uvicorn 
 fastapi
+psycopg2
+psycopg2-binary
