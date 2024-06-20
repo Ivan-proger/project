@@ -2,11 +2,8 @@ FROM python:3.12
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    postgresql \
-    postgresql-contrib
-RUN sudo pip install --upgrade pip
+RUN apt-get update && apt-get install -y bash
+RUN pip install --upgrade pip
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -25,11 +22,12 @@ EXPOSE 5432
 # Устанавливаем рабочую директорию для приложения
 WORKDIR /app/tgBot
 # Запускаем миграции и собираем статические файлы
-RUN python3 manage.py migrate
+#RUN python3 manage.py migrate
 
 # Открываем порт 8000 для приложения
 EXPOSE 8000
+# Порт для вебхука
+EXPOSE 8443
 
-
-# Запуск Django-сервера
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "tgBot.wsgi"]
+# Запуск Django-сервера и телеграм бота асинхроно
+#CMD ["ls", "&&", "python3", "manage.py", "migrate","&&" "python3", "manage.py", "runserver","0.0.0.0:8000", "&&", "python3", "manage.py", "bot_asinc"]

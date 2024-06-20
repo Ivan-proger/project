@@ -267,8 +267,20 @@ async def list_mode(message, start_index=0, end_index=36, user=None, all_series=
 class Command(BaseCommand):
     help = 'Async Telegram bot.'       
 
-    def handle(self, *args, **kwargs):
+    
+    def add_arguments(self, parser):
+        # Добавляем дополнительные аргументы
+        parser.add_argument(
+            '--webhook',
+            action='store_true',
+            help='Webhook for tg bot'
+        )
+
+    def handle(self, *args, **options):
         print("\n--- Bot runing ---\n")
+        # Если при запуске передать webhook
+        if options['webhook']:
+            settings.WEBHOOK_WORK = True
 
         # Воздух свежи перед: GOVNOCODE = ON
 
@@ -1137,7 +1149,7 @@ openssl req -new -x509 -days 3650 -key webhook_pkey.pem -out webhook_cert.pem
                 response = requests.get('https://ifconfig.me')
                 if response.status_code == 200:
                     ip_address = response.text.strip()
-                    print(f"\nPublic IP: {ip_address}")
+                    print(f"\nPublic IP: {ip_address}\n")
                 else:
                     print("\nError fetching IP address\n")
                 DOMAIN = ip_address
@@ -1146,9 +1158,11 @@ openssl req -new -x509 -days 3650 -key webhook_pkey.pem -out webhook_cert.pem
             # it uses fastapi + uvicorn
             asyncio.run(bot.run_webhooks(
                 listen=DOMAIN,
+                port=8443,
                 certificate=WEBHOOK_SSL_CERT,
                 certificate_key=WEBHOOK_SSL_PRIV,
-                debug=settings.DEBUG,            
+                debug=settings.DEBUG,  
+                max_connections=100,          
                 ))
         elif settings.DEBUG:
             asyncio.run(bot.delete_webhook(True))

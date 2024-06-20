@@ -27,3 +27,18 @@ services:
     volumes:
     - ./servers.json:/pgadmin4/servers.json
 
+
+  web:
+    container_name: web
+    build: .
+    command: >
+      /bin/sh -c "sleep 5 && 
+      python manage.py migrate && 
+      python manage.py runserver 0.0.0.0:8000 & 
+      python manage.py bot_asinc"
+
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+

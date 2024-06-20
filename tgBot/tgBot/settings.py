@@ -98,15 +98,23 @@ WSGI_APPLICATION = 'tgBot.wsgi.application'
 #     }
 # }
 
+
+# Разбираем ссылку на db в Docker
+from urllib.parse import urlparse
+# Разбор URL базы данных
+url = urlparse(
+f"postgres://{os.getenv("POSTGRES_USER")}:{os.getenv("POSTGRES_PASSWORD")}@db:5432/{os.getenv("POSTGRES_DB")}"
+)                                                                        # db - имя контейнера
+
 # Postgres v16
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': os.getenv("POSTGRES_DB"),
-        'USER': os.getenv("POSTGRES_USER"),
-        'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': url.path[1:],  # Убираем ведущий символ '/'
+        'USER': url.username,
+        'PASSWORD': url.password,
+        'HOST': url.hostname,
+        'PORT': url.port,
     }
 }
 
