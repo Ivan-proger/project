@@ -120,8 +120,8 @@ async def all_items():
 # Отправка картинки
 async def send_page(message):
     await bot.delete_message(message.chat.id, message.id)
-    if os.path.exists('ListMessageID'):
-        with open('ListMessageID', "r") as f:
+    if os.path.exists('ListMessageID.txt'):
+        with open('ListMessageID.txt', "r") as f:
             file_id = f.readline().strip()
             msg = await bot.send_photo(message.chat.id, file_id)
     else:
@@ -679,8 +679,8 @@ class Command(BaseCommand):
             async def send_start_message(message):
                 keyboard = types.InlineKeyboardMarkup()
                 keyboard.add(types.InlineKeyboardButton('Популярное аниме🔥', callback_data='hot_series'))
-                if os.path.exists('StartMessageID'):
-                    with open('StartMessageID', "r") as f:
+                if os.path.exists('StartMessageID.txt'):
+                    with open('StartMessageID.txt', "r") as f:
                         file_id = f.readline().strip()
                         await bot.send_photo(message.chat.id, file_id, settings.MESSAGE_START, reply_markup=keyboard, parse_mode="HTML")
 
@@ -1072,11 +1072,11 @@ class Command(BaseCommand):
                 # Постер к сериалу
                 if message.content_type == "photo":
                     if settings.CHANGE_DESIGN and (message.caption == "Start message" or message.caption == "sm"):  # Добавление фото после команды /start
-                            with open("StartMessageID", "w") as f:
+                            with open("StartMessageID.txt", "w") as f:
                                 f.write(message.photo[0].file_id)
                             await bot.send_message(message.chat.id, f'Успешно добавлено изображение в начальное сообщение')
                     elif settings.CHANGE_DESIGN and (message.caption == "List message" or message.caption == "lm"):  # Добавление фото в список
-                            with open("ListMessageID", "w") as f:
+                            with open("ListMessageID.txt", "w") as f:
                                 f.write(message.photo[0].file_id)
                             await bot.send_message(message.chat.id, f'Успешно добавлено изображение для списка')
                     elif len(message.caption.split(' ; ')) == 2:

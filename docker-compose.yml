@@ -32,11 +32,12 @@ services:
     container_name: web
     build: .
     command: >
-      /bin/sh -c "sleep 5 && 
+      /bin/sh -c "sleep 10 && 
       python manage.py migrate && 
       python manage.py runserver 0.0.0.0:8000 & 
       python manage.py bot_asinc"
-
+    volumes:
+    - ./txt_files:/tgBot
     ports:
       - "8000:8000"
     depends_on:
